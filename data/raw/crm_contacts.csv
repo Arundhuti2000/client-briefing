@@ -1,0 +1,10 @@
+contact_id,client_id,name,title,relationship_role,email,last_contact_date,updated_at
+CT001,C001,Raj Patel,CFO,Decision maker,raj.patel@northwindcap.com,10/30/2026,08/20/2026
+CT002,C001,Elena Novak,CEO,Executive sponsor,elena.novak@northwindcap.com,01/22/2026,01/22/2026
+CT003,C001,Priya Shah,Treasurer,Day-to-day,priya.shah@northwindcap.com,10/22/2026,10/22/2026
+CT004,C001,Priya Shah,Treasurer,Day-to-day,Priya.Shah@NorthwindCap.com,11/03/2025,11/03/2025
+CT005,C014,Tom Becker,COO,Influencer,tom.becker@northwindcap.com,02/10/2024,03/05/2024
+CT006,C002,Marcus Webb,CFO,Decision maker,marcus.webb@heliosenergy.com,10/05/2026,07/14/2026
+CT007,C002,Lena Fischer,Treasurer,Day-to-day,lena.fischer@heliosenergy.com,10/12/2026,10/12/2026
+CT008,C003,Susan Okafor,CFO,Decision maker,susan.okafor@arborhealth.org,06/15/2026,06/15/2026
+CT009,C003,Ben Carter,Director of Treasury,Day-to-day,ben.carter@arborhealth.org,10/20/2026,10/20/2026

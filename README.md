@@ -20,7 +20,8 @@ Run from the repo root with the venv activated.
 
 | Command      | What it does                                           |
 | ------------ | ------------------------------------------------------ |
-| `make data`  | Build `briefing.db` and `data/docs/` (synthetic data)  |
+| `make data`  | Write the raw source files to `data/raw/` (synthetic)  |
+| `make load`  | Load the raw CSVs into `briefing.db` and clean them    |
 | `make unify` | Resolve aliases, dedupe, flag stale/conflicting data   |
 | `make api`   | Start the FastAPI backend on http://localhost:8000     |
 | `make web`   | Start the React frontend on http://localhost:5173      |

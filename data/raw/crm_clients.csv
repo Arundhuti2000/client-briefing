@@ -1,0 +1,5 @@
+client_id,legal_name,domain,segment,region,status,updated_at,aliases
+C001,Northwind Capital Partners,northwindcap.com,Asset Management,North America,Active,2026-10-01T14:32:00Z,Northwind Capital; NWC; Northwind Cap.
+C002,Helios Energy Group,heliosenergy.com,Energy,EMEA,ACTIVE,2026-09-20T09:15:00Z,Helios; HEG
+C003,Arbor Health Systems,arborhealth.org,Healthcare,North America,active,2026-08-12T17:48:00Z,Arbor Health; AHS
+C014,Northwind Capital Partners LLC,northwindcap.com,Asset Management,North America,Active,2024-03-05T11:02:00Z,

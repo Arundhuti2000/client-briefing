@@ -1,0 +1,7 @@
+opp_id,client_name,product,stage,est_value_usd,owner,next_step,updated_at,restricted,required_entitlement
+OPP-NOR-FX,Northwind Capital Partners,FX Hedging,LOST,350000,Jordan Kim,None - client chose another provider,2026-10-20 16:05:00,0,standard
+OPP-NOR-TM,Northwind Capital,Treasury Management,Proposal,420000,Alex Morgan,Present liquidity sweep proposal at November meeting,2026-10-28 10:40:00,0,standard
+OPP-NOR-CF,Northwind Capital Partners,Credit Facility Upsize,discovery,600000,Alex Morgan,Confirm sizing with Raj Patel,2026-08-30 13:20:00,0,standard
+OPP-HEL-MA,Helios Energy Group,M&A Advisory,Negotiation,4500000,Alex Morgan,Finalize engagement letter for Project Sunrise,2026-10-30 18:15:00,1,restricted_deals
+OPP-HEL-GB,Helios,Green Bond Issuance,proposal,1200000,Alex Morgan,Send indicative pricing by November 20,2026-10-05 11:00:00,0,standard
+OPP-ARB-CM,Arbor Health Systems,Cash Management,Discovery,250000,Taylor Brooks,Resolve ACH file rejections before expanding scope,2026-09-25 09:30:00,0,standard

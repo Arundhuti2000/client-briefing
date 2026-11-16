@@ -6,6 +6,8 @@ import pytest
 
 MODULES = [
     "data.generate_data",
+    "app.ingest",
+    "app.load_structured",
     "app.db",
     "app.unify",
     "app.retrieval",

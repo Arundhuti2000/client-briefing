@@ -1,0 +1,8 @@
+client_id,product,metric,value,period,as_of
+C001,Custody,assets_under_custody_usd,3100000000,2026Q2,2026-07-10
+C001,Custody,assets_under_custody_usd,3400000000,2026Q3,2026-10-10
+C001,Payments,payment_volume_usd,1450000000,2026Q2,2026-07-10
+C001,Payments,payment_volume_usd,1620000000,2026Q3,2026-10-10
+C002,Payments,payment_volume_usd,980000000,2026Q3,2026-10-10
+C003,Payments,payment_exception_rate_pct,0.8,2026Q2,2026-07-10
+C003,Payments,payment_exception_rate_pct,2.4,2026Q3,2026-10-10

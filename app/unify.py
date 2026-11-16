@@ -1,11 +1,485 @@
-"""Entity resolution, dedupe, staleness and conflict flags, chunk indexing (SPEC.md section 4).
+"""Unification: entity resolution, dedupe, staleness, conflicts, indexing (SPEC.md section 4).
 
-All rules, no LLM. Built in Phase 2.
+All rules, no LLM. Every finding becomes a row in data_quality_flags, which the
+briefing's "Uncertain, conflicting, or unavailable" section reads directly.
+
+Run order (each step relies on the one before):
+  0. Reload briefing.db from data/raw, so running unify twice gives the same result.
+  1. Merge duplicate clients (T2), so names of merged records point at the survivor.
+  2. Resolve document client_refs (T1, T7, T8) and pipeline client names.
+  3. Remove duplicate contacts (T3).
+  4. Staleness: superseded metrics, stale statements (T4), overdue actions (T12).
+  5. Conflicts: contact roles (T5), commitments vs pipeline (T6).
+  6. Chunk approved, resolved documents for search (T11).
+
+Run:  make unify   (or: python -m app.unify)
 """
+
+import datetime as dt
+import json
+import re
+import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+
+from rapidfuzz import fuzz, process
+
+from app import load_structured
+from app.ingest import Document, load_documents
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+
+AS_OF_DATE = dt.date(2026, 11, 18)  # demo "today" = the meeting date; in production, the run date
+
+RESOLVE_SCORE = 90       # fuzzy score that resolves a name (SPEC section 4)
+REVIEW_SCORE = 75        # 75-89 goes to the review queue instead
+MENTION_SCORE = 50       # not attached, but close enough to mention on that client's briefing
+CLIENT_MERGE_SCORE = 92  # name similarity that marks two client records as duplicates
+STALE_AFTER_DAYS = 120
+MAX_CHUNK_CHARS = 1000   # longer documents are split by paragraph
+
+LEGAL_SUFFIXES = {"llc", "inc", "ltd", "plc", "corp", "partners"}
+LOST_STAGES = {"Lost"}   # "Won" means the client did commit, so it is not a conflict
+
+# Every table that points at a client; merged clients' rows move to the survivor.
+CHILD_TABLES = ["client_aliases", "contacts", "coverage", "revenue_metrics", "holdings", "performance",
+                "opportunities", "service_issues", "open_actions"]
+
+UNIFY_SCHEMA = """
+CREATE TABLE client_merges (
+    survivor_id  TEXT,
+    merged_id    TEXT,
+    reason       TEXT
+);
+CREATE TABLE doc_client_map (
+    doc_id     TEXT PRIMARY KEY,
+    client_id  TEXT NOT NULL,
+    method     TEXT,               -- id, exact, fuzzy, text
+    score      REAL
+);
+CREATE TABLE unresolved_refs (
+    source_id   TEXT,              -- e.g. DOC:news_005 or SQL:opportunities:OPP-X
+    ref_text    TEXT,              -- what the source called the client (NULL if nothing)
+    status      TEXT,              -- review, unresolved, ambiguous
+    best_match  TEXT,              -- closest client, never used as the answer
+    score       REAL
+);
+CREATE TABLE data_quality_flags (
+    flag_id               TEXT PRIMARY KEY,
+    client_id             TEXT,
+    flag_type             TEXT,
+    detail                TEXT,    -- plain language, numbers formatted by code
+    source_ids            TEXT,    -- JSON list of evidence IDs
+    severity              TEXT,    -- low, medium, high
+    required_entitlement  TEXT     -- strictest entitlement of the flag's sources
+);
+CREATE TABLE chunks (
+    chunk_id              TEXT PRIMARY KEY,
+    doc_id                TEXT,
+    client_id             TEXT NOT NULL,
+    doc_type              TEXT,
+    date                  TEXT,
+    required_entitlement  TEXT,
+    text                  TEXT
+);
+"""
+
+# ---------------------------------------------------------------------------
+# Small helpers
+# ---------------------------------------------------------------------------
+
+
+def normalize(name: str) -> str:
+    """'Northwind Capital Partners LLC' -> 'northwind capital'; 'Northwind Cap.' -> 'northwind cap'"""
+    words = re.sub(r"[^\w\s]", " ", name.lower()).split()
+    while words and words[-1] in LEGAL_SUFFIXES:
+        words.pop()
+    return " ".join(words)
+
+
+def format_usd(amount: float) -> str:
+    """4200000 -> '$4.2M', 50000000 -> '$50M', 1200000000 -> '$1.2B'"""
+    for size, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(amount) >= size:
+            return f"${amount / size:.1f}".rstrip("0").rstrip(".") + suffix
+    return f"${amount:,.0f}"
+
+
+def strictest(*entitlements: str) -> str:
+    """A flag built from a restricted source is itself restricted."""
+    return next((e for e in entitlements if e != "standard"), "standard")
+
+
+DOC_TYPE_NAMES = {"email": "email", "meeting_note": "meeting note", "prior_briefing": "prior briefing",
+                  "research": "research note", "news": "news item"}
+
+
+def doc_label(doc: Document) -> str:
+    return f"{DOC_TYPE_NAMES[doc.doc_type]} {doc.doc_id}"  # e.g. "prior briefing brief_001"
+
+
+def add_flag(conn, client_id, flag_type, severity, detail, source_ids, entitlement="standard") -> None:
+    count = conn.execute("SELECT COUNT(*) FROM data_quality_flags").fetchone()[0]
+    conn.execute("INSERT INTO data_quality_flags VALUES (?, ?, ?, ?, ?, ?, ?)",
+                 (f"F{count + 1:03d}", client_id, flag_type, detail, json.dumps(source_ids), severity, entitlement))
+
+# ---------------------------------------------------------------------------
+# Step 1: duplicate clients (T2)
+# ---------------------------------------------------------------------------
+
+
+def merge_duplicate_clients(conn) -> None:
+    """Same domain, or names >= 92 similar -> merge into the record with the newest updated_at."""
+    clients = conn.execute("SELECT * FROM clients ORDER BY updated_at DESC, client_id").fetchall()
+    survivors = []
+    for client in clients:
+        survivor = next((s for s in survivors
+                         if s["domain"].lower() == client["domain"].lower()
+                         or fuzz.ratio(normalize(s["legal_name"]), normalize(client["legal_name"])) >= CLIENT_MERGE_SCORE),
+                        None)
+        if survivor is None:
+            survivors.append(client)
+            continue
+        merged_id, survivor_id = client["client_id"], survivor["client_id"]
+        reason = "same domain" if survivor["domain"].lower() == client["domain"].lower() else "similar name"
+        moved = sum(conn.execute(f"UPDATE {table} SET client_id = ? WHERE client_id = ?",
+                                 (survivor_id, merged_id)).rowcount for table in CHILD_TABLES)
+        # Keep the old name findable, then drop the duplicate (its raw row stays in stg_crm_clients).
+        conn.execute("INSERT INTO client_aliases VALUES (?, ?, ?)",
+                     (client["legal_name"], survivor_id, f"merged from {merged_id}"))
+        conn.execute("DELETE FROM clients WHERE client_id = ?", (merged_id,))
+        conn.execute("INSERT INTO client_merges VALUES (?, ?, ?)", (survivor_id, merged_id, reason))
+        add_flag(conn, survivor_id, "duplicate_client", "low",
+                 f"Duplicate client record {merged_id} '{client['legal_name']}' ({reason}, updated "
+                 f"{client['updated_at']}) was merged into {survivor_id}; {moved} related records moved with it.",
+                 [f"SQL:clients:{merged_id}", f"SQL:clients:{survivor_id}"])
+
+# ---------------------------------------------------------------------------
+# Step 2: entity resolution (T1, T7, T8) and pipeline client names
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Resolution:
+    client_id: str | None          # set only when the reference is resolved
+    method: str                    # id, exact, fuzzy, text | review, unresolved, ambiguous
+    score: float
+    best_match: str | None = None  # closest client when unresolved; never used as the answer
+
+
+class Resolver:
+    """Maps an ID, name or alias to a client_id with the rules from SPEC.md section 4, step 1."""
+
+    def __init__(self, names: dict[str, set[str]], ids: dict[str, str]):
+        self.names = names  # normalized name or alias -> client_ids
+        self.ids = ids      # every known client_id, merged ones too -> surviving client_id
+
+    @classmethod
+    def from_db(cls, conn) -> "Resolver":
+        ids = {cid: cid for (cid,) in conn.execute("SELECT client_id FROM clients")}
+        ids.update({merged: survivor for merged, survivor in
+                    conn.execute("SELECT merged_id, survivor_id FROM client_merges")})
+        names = {}
+        rows = conn.execute("SELECT legal_name, client_id FROM clients "
+                            "UNION ALL SELECT alias, client_id FROM client_aliases")
+        for name, client_id in rows:
+            names.setdefault(normalize(name), set()).add(client_id)
+        return cls(names, ids)
+
+    def resolve(self, ref: str) -> Resolution:
+        if ref in self.ids:                                     # 1. already a valid ID
+            return Resolution(self.ids[ref], "id", 100)
+        key = normalize(ref)
+        exact = self.names.get(key, set())
+        if len(exact) == 1:                                     # 2. exact normalized name or alias
+            return Resolution(next(iter(exact)), "exact", 100)
+        if len(exact) > 1:
+            return Resolution(None, "ambiguous", 100)
+        match, score, _ = process.extractOne(key, sorted(self.names), scorer=fuzz.ratio)  # 3. fuzzy
+        candidates = self.names[match]
+        if score >= RESOLVE_SCORE and len(candidates) == 1:
+            return Resolution(next(iter(candidates)), "fuzzy", score)
+        status = "review" if score >= REVIEW_SCORE else "unresolved"
+        best = min(candidates) if score >= MENTION_SCORE else None
+        return Resolution(None, status, score, best_match=best)
+
+    def find_in_text(self, text: str) -> Resolution:
+        """4. No client_ref: look for known names and aliases as whole words in the text."""
+        padded = f" {normalize(text)} "
+        found = {cid for name, cids in self.names.items() if f" {name} " in padded for cid in cids}
+        if len(found) == 1:
+            return Resolution(found.pop(), "text", 100)
+        return Resolution(None, "ambiguous" if found else "unresolved", 0)
+
+
+def record_unresolved(conn, source_id, ref_text, r: Resolution, what: str, entitlement: str) -> None:
+    """Never attach the source to a client; log it and flag it (on the closest client, if any)."""
+    conn.execute("INSERT INTO unresolved_refs VALUES (?, ?, ?, ?, ?)",
+                 (source_id, ref_text, r.method, r.best_match, r.score))
+    reason = {"review": "needs a human review before it can be matched",
+              "unresolved": "couldn't be matched to a client confidently",
+              "ambiguous": "matches more than one client"}[r.method]
+    named = f"mentions '{ref_text}'" if ref_text else "names no known client"
+    add_flag(conn, r.best_match, "unresolved_reference", "medium",
+             f"{what[:1].upper()}{what[1:]} {named} but {reason}; it is not attached to any client.",
+             [source_id], entitlement)
+
+
+def resolve_documents(conn, resolver: Resolver, docs: list[Document]) -> dict[str, str]:
+    """Map each document to a client. Returns {doc_id: client_id} for resolved documents only."""
+    doc_clients = {}
+    for doc in docs:
+        r = resolver.resolve(doc.client_ref) if doc.client_ref else resolver.find_in_text(doc.text)
+        if r.client_id:
+            doc_clients[doc.doc_id] = r.client_id
+            conn.execute("INSERT INTO doc_client_map VALUES (?, ?, ?, ?)",
+                         (doc.doc_id, r.client_id, r.method, r.score))
+        else:
+            record_unresolved(conn, f"DOC:{doc.doc_id}", doc.client_ref, r,
+                              doc_label(doc), doc.required_entitlement)
+    return doc_clients
+
+
+def resolve_pipeline(conn, resolver: Resolver) -> None:
+    """The pipeline export names clients instead of using IDs; fill opportunities.client_id."""
+    rows = conn.execute("SELECT o.opp_id, s.client_name, o.required_entitlement FROM opportunities o "
+                        "JOIN stg_pipeline_opportunities s ON s.opp_id = o.opp_id ORDER BY o.opp_id").fetchall()
+    for opp_id, client_name, entitlement in rows:
+        r = resolver.resolve(client_name)
+        if r.client_id:
+            conn.execute("UPDATE opportunities SET client_id = ? WHERE opp_id = ?", (r.client_id, opp_id))
+        else:
+            record_unresolved(conn, f"SQL:opportunities:{opp_id}", client_name, r,
+                              f"pipeline opportunity {opp_id}", entitlement)
+
+# ---------------------------------------------------------------------------
+# Step 3: duplicate contacts (T3)
+# ---------------------------------------------------------------------------
+
+
+def dedupe_contacts(conn) -> None:
+    """Same client and same email (any letter case), or same name and title -> keep the newest."""
+    kept = {}  # match key -> the contact we kept
+    for c in conn.execute("SELECT * FROM contacts ORDER BY updated_at DESC, contact_id").fetchall():
+        keys = [(c["client_id"], "email", c["email"].lower()),
+                (c["client_id"], "name+title", c["name"].lower(), c["title"].lower())]
+        original = next((kept[k] for k in keys if k in kept), None)
+        if original is None:
+            for k in keys:
+                kept[k] = c
+            continue
+        conn.execute("DELETE FROM contacts WHERE contact_id = ?", (c["contact_id"],))
+        why = ("same email apart from letter case" if original["email"].lower() == c["email"].lower()
+               else "same name and title")
+        add_flag(conn, c["client_id"], "duplicate_contact", "low",
+                 f"{c['name']} appears twice ({original['contact_id']} and {c['contact_id']}, {why}). "
+                 f"Kept {original['contact_id']}, the newer record (updated {original['updated_at']}).",
+                 [f"SQL:contacts:{original['contact_id']}", f"SQL:contacts:{c['contact_id']}"])
+
+# ---------------------------------------------------------------------------
+# Step 4: staleness (T4, T12)
+# ---------------------------------------------------------------------------
+
+# Each metric series as (client_id, series label, evidence ID, as_of).
+SERIES_QUERIES = [
+    "SELECT client_id, 'Revenue', 'SQL:revenue_metrics:' || client_id || ':' || period, as_of "
+    "FROM revenue_metrics",
+    "SELECT client_id, product || ' balance', 'SQL:holdings:' || client_id || ':' || product || ':' || as_of, "
+    "as_of FROM holdings",
+    "SELECT client_id, product || ' ' || metric, "
+    "'SQL:performance:' || client_id || ':' || product || ':' || metric || ':' || period, as_of FROM performance",
+]
+
+
+def stale_as_ofs(as_ofs: list[str], today: dt.date) -> list[str]:
+    """The as_of dates that are more than 120 days old AND superseded by a newer value."""
+    cutoff = (today - dt.timedelta(days=STALE_AFTER_DAYS)).isoformat()
+    latest = max(as_ofs)
+    return sorted(a for a in as_ofs if a < cutoff and a < latest)
+
+
+def flag_stale_metrics(conn, today: dt.date) -> None:
+    """One low-severity flag per client listing series whose older values are superseded."""
+    series = {}  # (client_id, label) -> [(as_of, evidence_id)]
+    for query in SERIES_QUERIES:
+        for client_id, label, evidence_id, as_of in conn.execute(query):
+            series.setdefault((client_id, label), []).append((as_of, evidence_id))
+    per_client = {}  # client_id -> (labels, evidence_ids)
+    for (client_id, label), rows in sorted(series.items()):
+        old = stale_as_ofs([as_of for as_of, _ in rows], today)
+        if old:
+            labels, ids = per_client.setdefault(client_id, ([], []))
+            labels.append(label)
+            ids.extend(evidence_id for as_of, evidence_id in sorted(rows) if as_of in old)
+    for client_id, (labels, ids) in per_client.items():
+        add_flag(conn, client_id, "stale", "low",
+                 f"Older values of {', '.join(labels)} are more than {STALE_AFTER_DAYS} days old and "
+                 f"superseded by newer ones; only the latest values are used.", ids)
+
+
+def flag_stale_statements(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
+    """T4: a revenue figure stated in a document that differs from the latest SQL value."""
+    for doc in docs:
+        client_id = doc_clients.get(doc.doc_id)
+        for claim in doc.claims:
+            if client_id is None or claim["type"] != "metric" or claim["metric"] != "revenue_usd":
+                continue  # revenue is the only metric claim the prototype checks
+            latest = conn.execute("SELECT revenue_usd, period, as_of FROM revenue_metrics "
+                                  "WHERE client_id = ? ORDER BY as_of DESC LIMIT 1", (client_id,)).fetchone()
+            if latest is None or latest["revenue_usd"] == claim["value"]:
+                continue
+            add_flag(conn, client_id, "stale_statement", "medium",
+                     f"Revenue: {doc_label(doc)} ({doc.date}) said {format_usd(claim['value'])}; latest records "
+                     f"say {format_usd(latest['revenue_usd'])} ({latest['period']}, as of {latest['as_of']}). "
+                     f"Using {format_usd(latest['revenue_usd'])}.",
+                     [f"DOC:{doc.doc_id}", f"SQL:revenue_metrics:{client_id}:{latest['period']}"],
+                     doc.required_entitlement)
+
+
+def flag_overdue_actions(conn, today: dt.date) -> None:
+    """T12: an open action whose due date has passed."""
+    rows = conn.execute("SELECT * FROM open_actions WHERE status = 'Open' AND due_date < ? "
+                        "ORDER BY due_date, action_id", (today.isoformat(),)).fetchall()
+    for a in rows:
+        days = (today - dt.date.fromisoformat(a["due_date"])).days
+        add_flag(conn, a["client_id"], "overdue", "medium",
+                 f"Overdue action: '{a['description']}' (owner {a['owner']}) was due {a['due_date']} "
+                 f"and is {days} days late.",
+                 [f"SQL:open_actions:{a['action_id']}"])
+
+# ---------------------------------------------------------------------------
+# Step 5: conflicts (T5, T6)
+# ---------------------------------------------------------------------------
+
+
+def flag_role_conflicts(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
+    """T5: a document names someone in a role that the contacts table gives to someone else."""
+    for doc in docs:
+        client_id = doc_clients.get(doc.doc_id)
+        for claim in doc.claims:
+            if client_id is None or claim["type"] != "contact_role":
+                continue
+            contact = conn.execute("SELECT * FROM contacts WHERE client_id = ? AND lower(title) = lower(?) "
+                                   "ORDER BY updated_at DESC LIMIT 1", (client_id, claim["role"])).fetchone()
+            if contact is None or contact["name"].lower() == claim["name"].lower():
+                continue  # nobody holds the role on file, or the document agrees
+            doc_date = doc.date.isoformat()
+            newer = contact["name"] if contact["updated_at"] >= doc_date else claim["name"]
+            add_flag(conn, client_id, "conflict", "high",
+                     f"{claim['role']}: {doc_label(doc)} ({doc_date}) names {claim['name']}; the contacts record "
+                     f"(updated {contact['updated_at']}) says {contact['name']}. Using {newer}, the newer source.",
+                     [f"DOC:{doc.doc_id}", f"SQL:contacts:{contact['contact_id']}"],
+                     doc.required_entitlement)
+
+
+def flag_commitment_conflicts(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
+    """T6: a document reports a commitment on a product whose opportunity is Lost."""
+    for doc in docs:
+        client_id = doc_clients.get(doc.doc_id)
+        for claim in doc.claims:
+            if client_id is None or claim["type"] != "commitment":
+                continue
+            opp = conn.execute("SELECT * FROM opportunities WHERE client_id = ? AND lower(product) = lower(?)",
+                               (client_id, claim["product"])).fetchone()
+            if opp is None or opp["stage"] not in LOST_STAGES:
+                continue
+            add_flag(conn, client_id, "conflict", "high",
+                     f"{claim['product']}: {doc_label(doc)} ({doc.date}) says the client committed to "
+                     f"{format_usd(claim['amount_usd'])} by {claim['due']}; the pipeline shows {opp['opp_id']} as "
+                     f"{opp['stage']} (updated {opp['updated_at']}). Not presented as a live opportunity.",
+                     [f"DOC:{doc.doc_id}", f"SQL:opportunities:{opp['opp_id']}"],
+                     strictest(doc.required_entitlement, opp["required_entitlement"]))
+
+# ---------------------------------------------------------------------------
+# Step 6: approved sources (T11) and chunks
+# ---------------------------------------------------------------------------
+
+
+def split_into_chunks(text: str) -> list[str]:
+    """Short documents are one chunk; long ones are split by paragraph."""
+    if len(text) <= MAX_CHUNK_CHARS:
+        return [text]
+    return [p.strip() for p in text.split("\n\n") if p.strip()]
+
+
+def index_chunks(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
+    """Chunk every resolved document, except news from unapproved sources.
+    Restricted documents are chunked too: they keep required_entitlement, and
+    search filters on it at query time (SPEC section 5)."""
+    approved = {name for (name,) in conn.execute("SELECT source_name FROM approved_news_sources")}
+    for doc in docs:
+        client_id = doc_clients.get(doc.doc_id)
+        if client_id is None:
+            continue  # unresolved: never attached, never searchable
+        if doc.doc_type == "news" and doc.source not in approved:
+            # The flag names the source only; it never repeats the unapproved story.
+            add_flag(conn, client_id, "excluded_source", "medium",
+                     f"A news item ({doc.doc_id}) from '{doc.source}', which is not an approved news source, "
+                     f"was excluded from the briefing.", [f"DOC:{doc.doc_id}"])
+            continue
+        for i, text in enumerate(split_into_chunks(doc.text)):
+            conn.execute("INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?)",
+                         (f"{doc.doc_id}#{i}", doc.doc_id, client_id, doc.doc_type, doc.date.isoformat(),
+                          doc.required_entitlement, text))
+
+# ---------------------------------------------------------------------------
+# Entry points
+# ---------------------------------------------------------------------------
+
+
+def run(data_dir: Path = DATA_DIR, today: dt.date = AS_OF_DATE) -> None:
+    """Rebuild briefing.db from data_dir/raw, then apply every unification rule."""
+    load_structured.load(data_dir)  # start from the raw files every time, so reruns are identical
+    docs = load_documents(data_dir / "raw" / "docs", data_dir / "extracted_claims.json")
+    conn = sqlite3.connect(data_dir / "briefing.db")
+    conn.row_factory = sqlite3.Row  # rows readable by column name
+    try:
+        conn.executescript(UNIFY_SCHEMA)
+        merge_duplicate_clients(conn)
+        resolver = Resolver.from_db(conn)
+        doc_clients = resolve_documents(conn, resolver, docs)
+        resolve_pipeline(conn, resolver)
+        dedupe_contacts(conn)
+        flag_stale_metrics(conn, today)
+        flag_stale_statements(conn, docs, doc_clients)
+        flag_overdue_actions(conn, today)
+        flag_role_conflicts(conn, docs, doc_clients)
+        flag_commitment_conflicts(conn, docs, doc_clients)
+        index_chunks(conn, docs, doc_clients)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def print_summary(data_dir: Path = DATA_DIR) -> None:
+    conn = sqlite3.connect(data_dir / "briefing.db")
+    try:
+        print(f"Unified {data_dir / 'briefing.db'} (as of {AS_OF_DATE})")
+        for survivor, merged, reason in conn.execute("SELECT * FROM client_merges"):
+            print(f"  merged client {merged} into {survivor} ({reason})")
+        methods = conn.execute("SELECT method, COUNT(*) FROM doc_client_map GROUP BY method ORDER BY method")
+        print("  documents resolved: " + ", ".join(f"{n} by {m}" for m, n in methods))
+        for source_id, ref, status, best, score in conn.execute("SELECT * FROM unresolved_refs"):
+            print(f"  not attached: {source_id} ref={ref!r} status={status} closest={best} score={score:.0f}")
+        counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                  for t in ("clients", "contacts", "chunks", "data_quality_flags")}
+        unresolved_opps = conn.execute("SELECT COUNT(*) FROM opportunities WHERE client_id IS NULL").fetchone()[0]
+        print(f"  clients {counts['clients']}, contacts {counts['contacts']}, chunks {counts['chunks']}, "
+              f"opportunities without a client {unresolved_opps}")
+
+        print(f"\nData quality flags ({counts['data_quality_flags']}):")
+        rows = conn.execute("SELECT flag_id, client_id, severity, flag_type, required_entitlement, detail "
+                            "FROM data_quality_flags ORDER BY flag_id")
+        for flag_id, client_id, severity, flag_type, entitlement, detail in rows:
+            lock = "" if entitlement == "standard" else f" [{entitlement}]"
+            print(f"  {flag_id} {client_id or '-':<5} {severity:<7}{flag_type:<21}{detail}{lock}")
+    finally:
+        conn.close()
 
 
 def main() -> None:
-    raise SystemExit("unify: not implemented yet (Phase 2)")
+    run()
+    print_summary()
 
 
 if __name__ == "__main__":

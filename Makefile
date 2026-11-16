@@ -2,13 +2,17 @@
 # or point at it directly:  make test PYTHON=.venv/Scripts/python
 PYTHON ?= python
 
-.PHONY: data unify api web test eval
+.PHONY: data load unify api web test eval
 
-# Phase 1: build briefing.db and data/docs/*.json with the planted traps
+# Write the raw source files: data/raw/*.csv, data/raw/docs/, claims, trap answer key
 data:
 	$(PYTHON) -m data.generate_data
 
-# Phase 2: resolve aliases, dedupe, flag stale/conflicting data, index docs
+# Load data/raw/*.csv into briefing.db: stg_ tables as-is, then cleaned typed tables
+load:
+	$(PYTHON) -m app.load_structured
+
+# Reload from data/raw, then resolve aliases, dedupe, flag stale/conflicting data, chunk docs
 unify:
 	$(PYTHON) -m app.unify
 

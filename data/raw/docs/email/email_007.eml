@@ -1,0 +1,14 @@
+From: Ben Carter <ben.carter@arborhealth.org>
+To: Taylor Brooks <taylor.brooks@bank.example>
+Subject: ACH file format fix date
+Date: Tue, 20 Oct 2026 09:00:00 +0000
+X-Client-Ref: Arbor Health
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Taylor,
+
+Exceptions are still happening this week. Please confirm the fix date for the ACH file format issue before we expand cash management.
+
+Ben

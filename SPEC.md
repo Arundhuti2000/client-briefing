@@ -43,9 +43,13 @@ briefing/
   README.md
   Makefile
   data/
-    generate_data.py      # builds briefing.db and docs/
-    docs/                 # emails, notes, briefings, research, news (JSON)
+    generate_data.py      # writes the raw source files below (make data)
+    raw/                  # CSV exports + docs/ (.eml, .md, .txt), deliberately messy
+    extracted_claims.json # structured claims per doc_id (stand-in for LLM extraction)
+    planted_traps.json    # answer key: where each trap T1-T12 is planted
   app/
+    load_structured.py    # raw CSVs -> stg_ tables -> cleaned typed tables (make load)
+    ingest.py             # loads every document format into one Document model
     db.py                 # SQLite connection, entitlement-aware queries
     unify.py              # entity resolution, dedupe, staleness, conflicts
     retrieval.py          # chunking + BM25, filtered
@@ -91,7 +95,7 @@ The top row runs once to build clean data; the bottom row runs per briefing, and
 
 ## 3. Synthetic data pack
 
-`data/generate_data.py` builds `briefing.db` and `data/docs/*.json` from fixed seeds, so every run is identical and the eval is repeatable. Keep it small: **three clients, about 25 documents.** Small and deliberately messy beats big and clean.
+`data/generate_data.py` (`make data`) writes realistic raw source files to `data/raw/` from fixed values, so every run is identical and the eval is repeatable. `app/load_structured.py` (`make load`) turns the CSV exports into `briefing.db`, and `app/ingest.py` reads the documents. Keep it small: **three clients, about 25 documents.** Small and deliberately messy beats big and clean.
 
 **Clients:**
 
@@ -102,7 +106,30 @@ The top row runs once to build clean data; the bottom row runs per briefing, and
 | C003 | Arbor Health Systems | Arbor Health, AHS | Open service issue; ambiguous “Arbor” news |
 | C014 | Northwind Capital Partners LLC | (none) | **Duplicate of C001**, same domain, older record |
 
-**Structured tables (SQLite):**
+**Raw CSV exports** (`data/raw/`). One file per source system, inconsistent the way real exports are:
+
+| File | Source system | Quirks |
+| --- | --- | --- |
+| `crm_clients.csv` | CRM | ISO timestamps (`2026-10-01T14:32:00Z`); aliases in one `;`-separated column; status case varies |
+| `crm_contacts.csv` | CRM | US dates (`08/20/2026`) |
+| `crm_coverage.csv` | CRM | ISO dates |
+| `iam_users.csv` | Identity system | Entitlements as `standard;restricted_deals` |
+| `finance_revenue.csv` | Finance | Dates like `16-Oct-2026` |
+| `holdings.csv` | Finance | Money as text (`$214,000,000`); dates like `2026/09/30` |
+| `performance.csv` | Product systems | Clean: ISO dates, plain numbers |
+| `pipeline_opportunities.csv` | Pipeline | **Client names, not IDs** (`client_name`); timestamps; stage case varies (`LOST`, `proposal`) |
+| `service_issues.csv` | Service desk | UK dates (`02/06/2026` is 2 June); severity and status case varies |
+| `open_actions.csv` | Task tracker | Dates like `Oct 31, 2026`; status case varies |
+| `approved_news_sources.csv` | Compliance | Clean list |
+
+**Staging step** (`app/load_structured.py`, all code, no LLM):
+
+1. Copy each CSV as-is into a `stg_<file>` table (every column TEXT), so the original values stay queryable for audit.
+2. Clean into the typed tables below: dates are parsed with a format configured per source into ISO `YYYY-MM-DD` (formats can't be guessed: `02/06/2026` means different days in the UK and US files), money text becomes integers, and statuses get one canonical case. An unknown status is an error, not a guess.
+
+The staging step fixes formats only. Entity problems (aliases, duplicates, conflicts) are left to unification (section 4). In particular, `opportunities.client_id` stays empty until unify resolves `stg_pipeline_opportunities.client_name`.
+
+**Typed tables (SQLite, `briefing.db`):**
 
 | Table | Columns |
 | --- | --- |
@@ -118,8 +145,21 @@ The top row runs once to build clean data; the bottom row runs per briefing, and
 | `service_issues` | issue\_id, client\_id, summary, severity, status, opened, closed |
 | `open_actions` | action\_id, client\_id, description, owner, due\_date, status, source\_doc\_id |
 | `approved_news_sources` | source\_name |
+| `planted_traps` | trap\_id, description, planted\_in, expected\_behavior (loaded from `data/planted_traps.json`, the eval's answer key) |
 
-**Documents** (`data/docs/*.json`), one object each: `doc_id, doc_type (email, meeting_note, prior_briefing, research, news), client_ref (an ID, an alias, or missing), date, author, source, restricted, required_entitlement, text`.
+**Documents** (`data/raw/docs/<doc_type>/`). Each source keeps a realistic format. The folder name is the `doc_type` and the file name is the `doc_id`.
+
+| doc\_type | Format | Where the metadata lives |
+| --- | --- | --- |
+| `email` | `.eml` (standard email file) | `From` (author), `Date`, `Subject`; the client in a custom `X-Client-Ref` header |
+| `meeting_note`, `prior_briefing`, `research` | `.md` | YAML front matter: `doc_id, client_ref, date, author, source, restricted, required_entitlement` |
+| `news` | `.txt` | Header lines `Source:`, `Date:`, `Headline:`, plus `Client-Ref:` only when the feed tagged a client (the T7 item has none) |
+
+Emails and news carry no entitlement metadata, so they load as unrestricted (`standard`); news has no author.
+
+**Claims** (`data/extracted_claims.json`): the structured statements the section 4 rules check, keyed by `doc_id`, for example `{"email_001": [{"type": "contact_role", "role": "CFO", "name": "Dana Lee"}]}`. They stand in for the output of an LLM extraction step, so they live outside the documents.
+
+**Ingestion** (`app/ingest.py`): one parser per format loads every file into a single Pydantic `Document` with the same fields for every type: `doc_id, doc_type (email, meeting_note, prior_briefing, research, news), client_ref (an ID, an alias, or missing), date, author, source, restricted, required_entitlement, text, claims`. The text is the subject, title, or headline followed by the body. Everything downstream works with `Document` only.
 
 **Users for the demo:**
 
@@ -147,16 +187,19 @@ The top row runs once to build clean data; the bottom row runs per briefing, and
 
 ## 4. Data unification (all code, no LLM)
 
-`app/unify.py` runs once after data generation and writes clean tables plus a `data_quality_flags` table. Every flag has: `flag_id, client_id, flag_type, detail, source_ids, severity`. The briefing's “Uncertain, conflicting, or unavailable” section reads straight from this table.
+`app/unify.py` runs once after `make load`. It works on the typed tables, whose formats the staging step has already cleaned, and fixes entity and truth problems. It writes clean tables plus a `data_quality_flags` table. Every flag has: `flag_id, client_id, flag_type, detail, source_ids, severity, required_entitlement`. Severity is `low`, `medium`, or `high`. A flag inherits the strictest entitlement of its sources, so the panel can never leak a restricted record. The briefing's “Uncertain, conflicting, or unavailable” section reads straight from this table.
+
+**Run order.** `make unify` first reloads `briefing.db` from `data/raw/`, because the rules change the typed tables in place; reloading makes a second run give the same result. It then merges duplicate clients (step 2) *before* resolving names (step 1), so a merged record's name points at the survivor instead of looking ambiguous.
 
 **Step 1: Entity resolution (traps T1, T7, T8).** Resolve every `client_ref` to a canonical `client_id`:
 
 1. If it's already a valid ID, use it.
 2. Exact match on a normalized name or alias (lowercase, strip punctuation and suffixes like LLC, Inc, Partners).
 3. Fuzzy match with `rapidfuzz` on legal names and aliases: score ≥ 90 resolves; 75 to 89 goes to the review queue; below 75 stays unresolved.
-4. For documents with no `client_ref` (news), search the text for known names and aliases.
+4. For documents with no `client_ref` (news), search the text for known names and aliases as whole words. Exactly one client found resolves; two or more is ambiguous.
+5. **Pipeline rows:** resolve each `stg_pipeline_opportunities.client_name` the same way and write the result to `opportunities.client_id`. A name that doesn't resolve leaves `client_id` empty and raises a flag, so that opportunity never appears in any briefing.
 
-Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolved or ambiguous documents go into `unresolved_refs` and are **never attached to a client**. They appear as a flag, so the demo can show: “1 news item mentions ‘Arbor’ but couldn't be matched confidently.”
+Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolved or ambiguous documents go into `unresolved_refs` and are **never attached to a client**. They appear as a flag, so the demo can show: “1 news item mentions ‘Arbor’ but couldn't be matched confidently.” The *flag* (never the document) is shown on the closest client's briefing when the fuzzy score is at least 50; below that it belongs to no client.
 
 **Step 2: Deduplication (T2, T3).**
 
@@ -165,23 +208,23 @@ Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolv
 
 **Step 3: Staleness (T4, T12).** Each fact carries an `as_of` or `date`. Rules:
 
-- A metric older than 120 days, when a newer one exists → `stale`.
+- A metric older than 120 days, when a newer one exists → `stale`. Old quarters are history, not errors, so this is one low-severity flag per client listing the superseded series; tools always use the latest value.
 - A figure stated in a prior briefing that differs from the latest SQL value → `stale_statement`, showing both values and dates.
 - An open action past its due date → `overdue`.
 
 **Step 4: Conflicts (T5, T6).** Keep it rule-based and explicit:
 
 - **Contact role conflict:** a document names someone in a role (from a small extraction step or a simple pattern like “CFO is X”) that differs from `contacts` → `conflict`, prefer the newer source, show both.
-- **Commitment vs pipeline:** a note mentions a commitment on a product while that product's opportunity is Lost or Closed → `conflict`.
+- **Commitment vs pipeline:** a note mentions a commitment on a product while that product's opportunity is Lost → `conflict`. (Won means the client did commit, so it isn't a conflict.)
 
-For the prototype, plant these with a structured `claims` field in the document JSON (for example `{"type": "contact_role", "role": "CFO", "name": "Dana Lee"}`), so the rules are exact and testable. In the presentation, say honestly that **in production, claims would be extracted by an LLM into this same schema, then checked by the same rules.**
+For the prototype, plant these as structured claims in `data/extracted_claims.json`, keyed by `doc_id` (for example `{"email_001": [{"type": "contact_role", "role": "CFO", "name": "Dana Lee"}]}`); `app/ingest.py` attaches them to each `Document` as its `claims` field, so the rules are exact and testable. In the presentation, say honestly that **in production, claims would be extracted by an LLM into this same schema, then checked by the same rules.**
 
 **Step 5: Restricted records (T9) and approved sources (T11).**
 
 - Restricted rows and documents keep `required_entitlement`. Nothing is deleted; filtering happens at query time (section 5).
 - News not in `approved_news_sources` is excluded during indexing and logged as a flag.
 
-**Step 6: Index documents.** Chunk each document (they're short, so one chunk per document is fine; split long ones by paragraph), and store `chunks(chunk_id, doc_id, client_id, doc_type, date, required_entitlement, text)`. Build the BM25 index over chunk text. If time allows, add embeddings and merge with Reciprocal Rank Fusion, exactly like your ServiceNow design.
+**Step 6: Index documents.** Chunk each document (they're short, so one chunk per document is fine; split long ones by paragraph), and store `chunks(chunk_id, doc_id, client_id, doc_type, date, required_entitlement, text)`. Only resolved documents from approved sources are chunked, so every chunk has a client. `app/retrieval.py` builds the BM25 index over chunk text when it starts (BM25 lives in memory). If time allows, add embeddings and merge with Reciprocal Rank Fusion, exactly like your ServiceNow design.
 
 ## 5. Tools, orchestration, and validation
 

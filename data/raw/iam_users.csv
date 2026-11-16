@@ -1,0 +1,3 @@
+user_id,name,role,entitlements
+u1,Alex Morgan,Senior coverage banker,standard;restricted_deals
+u2,Sam Rivera,Analyst,standard

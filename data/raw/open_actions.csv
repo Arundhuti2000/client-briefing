@@ -1,0 +1,7 @@
+action_id,client_id,description,owner,due_date,status,source_doc_id
+A-001,C001,Send Q3 liquidity analysis to Priya Shah,Sam Rivera,"Oct 31, 2026",OPEN,note_001
+A-002,C001,Schedule treasury management workshop,Alex Morgan,"Nov 25, 2026",Open,email_003
+A-003,C001,Send indicative credit facility terms,Alex Morgan,"Aug 15, 2026",done,note_002
+A-004,C014,Collect refreshed KYC documents,Sam Rivera,"Dec 15, 2026",open,email_004
+A-005,C002,Send green bond indicative pricing,Alex Morgan,"Nov 20, 2026",Open,note_005
+A-006,C003,Confirm ACH file format fix date,Taylor Brooks,"Nov 21, 2026",OPEN,email_007

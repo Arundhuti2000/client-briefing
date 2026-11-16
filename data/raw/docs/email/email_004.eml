@@ -1,0 +1,14 @@
+From: KYC Operations <kyc.operations@bank.example>
+To: Tom Becker <tom.becker@northwindcap.com>
+Subject: KYC refresh due by December 15
+Date: Wed, 05 Aug 2026 09:00:00 +0000
+X-Client-Ref: C014
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+MIME-Version: 1.0
+
+Dear Tom,
+
+The KYC documents for Northwind Capital Partners LLC are due for refresh. Please send the updated ownership chart and authorized signer list by December 15.
+
+KYC Operations
