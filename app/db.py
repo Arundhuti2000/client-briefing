@@ -1,4 +1,129 @@
-"""SQLite connection and entitlement-aware queries (SPEC.md section 5).
+"""SQLite access for the tools: read-only connections and entitlement-aware queries (SPEC.md section 5).
 
-Built in Phase 3.
+Every SQL query the tools run lives in this file. Three tables can hold
+restricted content (opportunities, chunks, data_quality_flags); their queries
+take the user's entitlements and filter inside the WHERE clause, so a restricted
+row never leaves the database for a user who can't see it: not as a row, not as
+part of a count.
 """
+
+import datetime as dt
+import sqlite3
+from pathlib import Path
+
+DB_PATH = Path(__file__).resolve().parent.parent / "data" / "briefing.db"
+
+
+def connect(readonly: bool = True) -> sqlite3.Connection:
+    """Open briefing.db. The tools use read-only mode, so they cannot write even by mistake.
+    Neither mode creates the file if it is missing."""
+    mode = "ro" if readonly else "rw"
+    conn = sqlite3.connect(f"{DB_PATH.resolve().as_uri()}?mode={mode}", uri=True)
+    conn.row_factory = sqlite3.Row  # rows readable by column name
+    return conn
+
+
+def entitlement_filter(column: str, entitlements: list[str]) -> tuple[str, list[str]]:
+    """SQL condition keeping only rows whose required entitlement the user holds.
+    Unrestricted rows carry 'standard', which every user has; no entitlements -> no rows."""
+    if not entitlements:
+        return "0", []
+    placeholders = ", ".join("?" for _ in entitlements)
+    return f"{column} IN ({placeholders})", list(entitlements)
+
+# --- clients and people -----------------------------------------------------
+
+
+def canonical_client_id(conn, client_id: str) -> str | None:
+    """The client's current ID, following a merge (C014 -> C001); None if unknown."""
+    if conn.execute("SELECT 1 FROM clients WHERE client_id = ?", (client_id,)).fetchone():
+        return client_id
+    row = conn.execute("SELECT survivor_id FROM client_merges WHERE merged_id = ?", (client_id,)).fetchone()
+    return row["survivor_id"] if row else None
+
+
+def client(conn, client_id: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM clients WHERE client_id = ?", (client_id,)).fetchone()
+
+
+def coverage(conn, client_id: str) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM coverage WHERE client_id = ? ORDER BY since, banker_name",
+                        (client_id,)).fetchall()
+
+
+def contacts(conn, client_id: str) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM contacts WHERE client_id = ? ORDER BY contact_id", (client_id,)).fetchall()
+
+
+def user(conn, user_id: str) -> sqlite3.Row | None:
+    return conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+
+# --- numbers --------------------------------------------------------------------
+
+# Every metric series for one client, oldest first. Evidence IDs match app/unify.py.
+METRIC_ROWS_SQL = """
+SELECT 'Revenue' AS series, 'SQL:revenue_metrics:' || client_id || ':' || period AS evidence_id,
+       revenue_usd AS value, 'usd' AS unit, period, as_of, 'revenue_metrics' AS source
+  FROM revenue_metrics WHERE client_id = :client_id
+UNION ALL
+SELECT 'Wallet share', 'SQL:revenue_metrics:' || client_id || ':' || period,
+       wallet_share_pct, 'pct', period, as_of, 'revenue_metrics'
+  FROM revenue_metrics WHERE client_id = :client_id
+UNION ALL
+SELECT product || ' balance', 'SQL:holdings:' || client_id || ':' || product || ':' || as_of,
+       balance_usd, 'usd', NULL, as_of, 'holdings'
+  FROM holdings WHERE client_id = :client_id
+UNION ALL
+SELECT product || ' ' || replace(replace(replace(metric, '_usd', ''), '_pct', ''), '_', ' '),
+       'SQL:performance:' || client_id || ':' || product || ':' || metric || ':' || period,
+       value, CASE WHEN metric LIKE '%pct' THEN 'pct' ELSE 'usd' END, period, as_of, 'performance'
+  FROM performance WHERE client_id = :client_id
+ORDER BY series, as_of
+"""
+
+
+def metric_rows(conn, client_id: str) -> list[sqlite3.Row]:
+    return conn.execute(METRIC_ROWS_SQL, {"client_id": client_id}).fetchall()
+
+# --- restricted-capable tables: always filtered by entitlement ----------------------
+
+
+def opportunities(conn, client_id: str, entitlements: list[str]) -> list[sqlite3.Row]:
+    condition, params = entitlement_filter("required_entitlement", entitlements)
+    return conn.execute(f"SELECT * FROM opportunities WHERE client_id = ? AND {condition} ORDER BY opp_id",
+                        [client_id, *params]).fetchall()
+
+
+def visible_chunks(conn, client_id: str, entitlements: list[str],
+                   doc_types: list[str] | None = None, since: dt.date | None = None) -> list[sqlite3.Row]:
+    """The client's document chunks this user may see, newest first."""
+    condition, params = entitlement_filter("required_entitlement", entitlements)
+    sql = f"SELECT * FROM chunks WHERE client_id = ? AND {condition}"
+    params = [client_id, *params]
+    if doc_types:
+        sql += f" AND doc_type IN ({', '.join('?' for _ in doc_types)})"
+        params += list(doc_types)
+    if since:
+        sql += " AND date >= ?"
+        params.append(since.isoformat())
+    return conn.execute(sql + " ORDER BY date DESC, chunk_id", params).fetchall()
+
+
+def flags(conn, client_id: str, entitlements: list[str]) -> list[sqlite3.Row]:
+    condition, params = entitlement_filter("required_entitlement", entitlements)
+    return conn.execute(f"SELECT * FROM data_quality_flags WHERE client_id = ? AND {condition} ORDER BY flag_id",
+                        [client_id, *params]).fetchall()
+
+# --- tables with no restricted content ----------------------------------------------
+
+
+def actions(conn, client_id: str) -> list[sqlite3.Row]:
+    """Open actions first (soonest due first), then done ones."""
+    return conn.execute("SELECT * FROM open_actions WHERE client_id = ? "
+                        "ORDER BY status = 'Open' DESC, due_date, action_id", (client_id,)).fetchall()
+
+
+def service_issues(conn, client_id: str) -> list[sqlite3.Row]:
+    """Open issues first, newest first."""
+    return conn.execute("SELECT * FROM service_issues WHERE client_id = ? "
+                        "ORDER BY status = 'Open' DESC, opened DESC, issue_id", (client_id,)).fetchall()

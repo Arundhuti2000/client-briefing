@@ -3,3 +3,5 @@ __pycache__/
 *.db
 .env
 .cache/
+*.npy
+data/embeddings_index.json

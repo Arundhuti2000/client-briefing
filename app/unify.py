@@ -10,7 +10,7 @@ Run order (each step relies on the one before):
   3. Remove duplicate contacts (T3).
   4. Staleness: superseded metrics, stale statements (T4), overdue actions (T12).
   5. Conflicts: contact roles (T5), commitments vs pipeline (T6).
-  6. Chunk approved, resolved documents for search (T11).
+  6. Chunk approved, resolved documents for search (T11) and embed each chunk.
 
 Run:  make unify   (or: python -m app.unify)
 """
@@ -24,7 +24,7 @@ from pathlib import Path
 
 from rapidfuzz import fuzz, process
 
-from app import load_structured
+from app import load_structured, retrieval
 from app.ingest import Document, load_documents
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
@@ -80,7 +80,8 @@ CREATE TABLE chunks (
     doc_type              TEXT,
     date                  TEXT,
     required_entitlement  TEXT,
-    text                  TEXT
+    text                  TEXT,
+    source                TEXT     -- e.g. Reuters, crm_notes, email
 );
 """
 
@@ -418,9 +419,16 @@ def index_chunks(conn, docs: list[Document], doc_clients: dict[str, str]) -> Non
                      f"was excluded from the briefing.", [f"DOC:{doc.doc_id}"])
             continue
         for i, text in enumerate(split_into_chunks(doc.text)):
-            conn.execute("INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?)",
+            conn.execute("INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                          (f"{doc.doc_id}#{i}", doc.doc_id, client_id, doc.doc_type, doc.date.isoformat(),
-                          doc.required_entitlement, text))
+                          doc.required_entitlement, text, doc.source))
+
+
+def embed_chunks(conn, data_dir: Path) -> None:
+    """Embed every chunk once (all-MiniLM-L6-v2) for the vector half of hybrid search."""
+    rows = conn.execute("SELECT chunk_id, text FROM chunks ORDER BY chunk_id").fetchall()
+    vectors = retrieval.encode([row["text"] for row in rows])
+    retrieval.save_embeddings(data_dir, [row["chunk_id"] for row in rows], vectors)
 
 # ---------------------------------------------------------------------------
 # Entry points
@@ -446,6 +454,7 @@ def run(data_dir: Path = DATA_DIR, today: dt.date = AS_OF_DATE) -> None:
         flag_role_conflicts(conn, docs, doc_clients)
         flag_commitment_conflicts(conn, docs, doc_clients)
         index_chunks(conn, docs, doc_clients)
+        embed_chunks(conn, data_dir)
         conn.commit()
     finally:
         conn.close()
@@ -464,8 +473,8 @@ def print_summary(data_dir: Path = DATA_DIR) -> None:
         counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
                   for t in ("clients", "contacts", "chunks", "data_quality_flags")}
         unresolved_opps = conn.execute("SELECT COUNT(*) FROM opportunities WHERE client_id IS NULL").fetchone()[0]
-        print(f"  clients {counts['clients']}, contacts {counts['contacts']}, chunks {counts['chunks']}, "
-              f"opportunities without a client {unresolved_opps}")
+        print(f"  clients {counts['clients']}, contacts {counts['contacts']}, chunks {counts['chunks']} "
+              f"(embedded to {data_dir / 'embeddings.npy'}), opportunities without a client {unresolved_opps}")
 
         print(f"\nData quality flags ({counts['data_quality_flags']}):")
         rows = conn.execute("SELECT flag_id, client_id, severity, flag_type, required_entitlement, detail "

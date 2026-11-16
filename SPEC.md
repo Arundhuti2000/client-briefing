@@ -18,7 +18,7 @@ Due **Tuesday 11/17, 9 AM EST**. Build the must-haves first. Stop adding feature
 - Two users with different permissions showing different briefings
 - An eval script that prints a scorecard
 
-**Nice-to-haves (only if time is left):** follow-up Q&A box, “create follow-up task” button, embeddings on top of BM25, MCP server wrapper.
+**Nice-to-haves (only if time is left):** follow-up Q&A box, “create follow-up task” button, MCP server wrapper.
 
 **Tech stack.** Pick boring, fast tools so the night goes to the design, not setup.
 
@@ -27,7 +27,7 @@ Due **Tuesday 11/17, 9 AM EST**. Build the must-haves first. Stop adding feature
 | Language | Python 3.11 | Your strongest language |
 | Structured store | SQLite (one file) | Zero setup; real SQL; easy to show |
 | Keyword search | `rank_bm25` | Your ServiceNow pattern |
-| Vector search (optional) | `sentence-transformers` all-MiniLM-L6-v2 | Small, runs locally; skip if short on time |
+| Vector search (required) | `sentence-transformers` all-MiniLM-L6-v2 | Runs locally, no API key or rate limit; vectors kept in NumPy and cached to disk (25 docs needs no vector database) |
 | Fuzzy matching | `rapidfuzz` | Alias and name matching |
 | Contracts | Pydantic | Typed tool inputs and outputs |
 | LLM | `Gemini via the google-genai SDK (GEMINI_API_KEY, GEMINI_MODEL in .env), with LLM_PROVIDER=mock as the default and demo fallback` | Demo still works with no key or no network |
@@ -51,8 +51,8 @@ briefing/
     load_structured.py    # raw CSVs -> stg_ tables -> cleaned typed tables (make load)
     ingest.py             # loads every document format into one Document model
     db.py                 # SQLite connection, entitlement-aware queries
-    unify.py              # entity resolution, dedupe, staleness, conflicts
-    retrieval.py          # chunking + BM25, filtered
+    unify.py              # entity resolution, dedupe, staleness, conflicts, chunks + embeddings
+    retrieval.py          # hybrid search: BM25 + vectors merged with RRF, filtered first
     tools.py              # read-only tools with Pydantic contracts
     orchestrator.py       # plans sections, calls tools, builds evidence
     llm.py                # Gemini client + mock mode + cache
@@ -70,6 +70,24 @@ briefing/
     run_eval.py           # scorecard
   tests/
 ```
+
+### Scope check against the assignment (scope is now locked)
+
+Every item in the assignment maps to a part of this spec. Nothing outside this table gets built tonight.
+
+| Assignment asks for | Covered by |
+| --- | --- |
+| Structured data: client master, contacts and roles, coverage, revenue metrics, holdings, performance, pipeline, service issues, open actions | Section 3 SQLite tables |
+| Unstructured data: emails, meeting notes, prior briefings, research, approved news | Section 3 documents (free text in the `text` field) |
+| Data conditions: aliases, duplicates, stale or conflicting statements, missing IDs, restricted records | Section 3 traps T1–T12; section 4 rules |
+| Seven briefing questions | Section 5 tools; section 6 section cards |
+| Reimagine the workflow, not only a memo or chatbot | Section 6: briefing workspace, conflicts panel, follow-up tasks, export |
+| Demo | Section 9 demo script |
+| Where the LLM is and isn't used | Section 2 table |
+| Evaluation plan: prove it's safe to run | Section 7 |
+| Showcase areas: UX and actions; orchestration and context; SQL tools, RAG, function contracts, error handling; data engineering; identity and controls; evaluation | Sections 6, 5, 5, 4, 6, and 7 |
+
+**File formats:** the raw data uses realistic source formats (already built): CSV exports from each system, inconsistent the way real exports are, and documents as `.eml` emails, Markdown notes with YAML front matter, and `.txt` news. A staging step loads the CSVs as-is and cleans them into the typed SQLite tables, and `app/ingest.py` reads every document format into one `Document` model whose `text` field holds the free text. Everything after loading is format-independent. If asked, say: “In production, the same loaders would read the real CRM exports, mailboxes, and PDFs into these same structures; the rest of the pipeline wouldn't change.” **No further format work tonight.**
 
 ## 2. Architecture: where the LLM is used and where it isn't
 
@@ -122,12 +140,7 @@ The top row runs once to build clean data; the bottom row runs per briefing, and
 | `open_actions.csv` | Task tracker | Dates like `Oct 31, 2026`; status case varies |
 | `approved_news_sources.csv` | Compliance | Clean list |
 
-**Staging step** (`app/load_structured.py`, all code, no LLM):
-
-1. Copy each CSV as-is into a `stg_<file>` table (every column TEXT), so the original values stay queryable for audit.
-2. Clean into the typed tables below: dates are parsed with a format configured per source into ISO `YYYY-MM-DD` (formats can't be guessed: `02/06/2026` means different days in the UK and US files), money text becomes integers, and statuses get one canonical case. An unknown status is an error, not a guess.
-
-The staging step fixes formats only. Entity problems (aliases, duplicates, conflicts) are left to unification (section 4). In particular, `opportunities.client_id` stays empty until unify resolves `stg_pipeline_opportunities.client_name`.
+**Staging step** (`app/load_structured.py`, all code, no LLM): copy each CSV as-is into a `stg_<file>` table (every column TEXT), so the original values stay queryable for audit; then clean into the typed tables below. Dates are parsed with a format configured per source (formats can't be guessed: `02/06/2026` means different days in the UK and US files), money text becomes integers, and statuses get one canonical case; an unknown status is an error, not a guess. Staging fixes formats only. Entity problems are left to unification (section 4), which also fills `opportunities.client_id` by resolving `stg_pipeline_opportunities.client_name`.
 
 **Typed tables (SQLite, `briefing.db`):**
 
@@ -159,7 +172,7 @@ Emails and news carry no entitlement metadata, so they load as unrestricted (`st
 
 **Claims** (`data/extracted_claims.json`): the structured statements the section 4 rules check, keyed by `doc_id`, for example `{"email_001": [{"type": "contact_role", "role": "CFO", "name": "Dana Lee"}]}`. They stand in for the output of an LLM extraction step, so they live outside the documents.
 
-**Ingestion** (`app/ingest.py`): one parser per format loads every file into a single Pydantic `Document` with the same fields for every type: `doc_id, doc_type (email, meeting_note, prior_briefing, research, news), client_ref (an ID, an alias, or missing), date, author, source, restricted, required_entitlement, text, claims`. The text is the subject, title, or headline followed by the body. Everything downstream works with `Document` only.
+**Ingestion** (`app/ingest.py`): one parser per format loads every file into a single Pydantic `Document` with the same fields for every type: `doc_id, doc_type (email, meeting_note, prior_briefing, research, news), client_ref (an ID, an alias, or missing), date, author, source, restricted, required_entitlement, text, claims`. Everything downstream works with `Document` only.
 
 **Users for the demo:**
 
@@ -187,19 +200,16 @@ Emails and news carry no entitlement metadata, so they load as unrestricted (`st
 
 ## 4. Data unification (all code, no LLM)
 
-`app/unify.py` runs once after `make load`. It works on the typed tables, whose formats the staging step has already cleaned, and fixes entity and truth problems. It writes clean tables plus a `data_quality_flags` table. Every flag has: `flag_id, client_id, flag_type, detail, source_ids, severity, required_entitlement`. Severity is `low`, `medium`, or `high`. A flag inherits the strictest entitlement of its sources, so the panel can never leak a restricted record. The briefing's “Uncertain, conflicting, or unavailable” section reads straight from this table.
-
-**Run order.** `make unify` first reloads `briefing.db` from `data/raw/`, because the rules change the typed tables in place; reloading makes a second run give the same result. It then merges duplicate clients (step 2) *before* resolving names (step 1), so a merged record's name points at the survivor instead of looking ambiguous.
+`app/unify.py` runs once after data generation and writes clean tables plus a `data_quality_flags` table. Every flag has: `flag_id, client_id, flag_type, detail, source_ids, severity`. The briefing's “Uncertain, conflicting, or unavailable” section reads straight from this table.
 
 **Step 1: Entity resolution (traps T1, T7, T8).** Resolve every `client_ref` to a canonical `client_id`:
 
 1. If it's already a valid ID, use it.
 2. Exact match on a normalized name or alias (lowercase, strip punctuation and suffixes like LLC, Inc, Partners).
 3. Fuzzy match with `rapidfuzz` on legal names and aliases: score ≥ 90 resolves; 75 to 89 goes to the review queue; below 75 stays unresolved.
-4. For documents with no `client_ref` (news), search the text for known names and aliases as whole words. Exactly one client found resolves; two or more is ambiguous.
-5. **Pipeline rows:** resolve each `stg_pipeline_opportunities.client_name` the same way and write the result to `opportunities.client_id`. A name that doesn't resolve leaves `client_id` empty and raises a flag, so that opportunity never appears in any briefing.
+4. For documents with no `client_ref` (news), search the text for known names and aliases.
 
-Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolved or ambiguous documents go into `unresolved_refs` and are **never attached to a client**. They appear as a flag, so the demo can show: “1 news item mentions ‘Arbor’ but couldn't be matched confidently.” The *flag* (never the document) is shown on the closest client's briefing when the fuzzy score is at least 50; below that it belongs to no client.
+Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolved or ambiguous documents go into `unresolved_refs` and are **never attached to a client**. They appear as a flag, so the demo can show: “1 news item mentions ‘Arbor’ but couldn't be matched confidently.”
 
 **Step 2: Deduplication (T2, T3).**
 
@@ -208,14 +218,14 @@ Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolv
 
 **Step 3: Staleness (T4, T12).** Each fact carries an `as_of` or `date`. Rules:
 
-- A metric older than 120 days, when a newer one exists → `stale`. Old quarters are history, not errors, so this is one low-severity flag per client listing the superseded series; tools always use the latest value.
+- A metric older than 120 days, when a newer one exists → `stale`.
 - A figure stated in a prior briefing that differs from the latest SQL value → `stale_statement`, showing both values and dates.
 - An open action past its due date → `overdue`.
 
 **Step 4: Conflicts (T5, T6).** Keep it rule-based and explicit:
 
 - **Contact role conflict:** a document names someone in a role (from a small extraction step or a simple pattern like “CFO is X”) that differs from `contacts` → `conflict`, prefer the newer source, show both.
-- **Commitment vs pipeline:** a note mentions a commitment on a product while that product's opportunity is Lost → `conflict`. (Won means the client did commit, so it isn't a conflict.)
+- **Commitment vs pipeline:** a note mentions a commitment on a product while that product's opportunity is Lost or Closed → `conflict`.
 
 For the prototype, plant these as structured claims in `data/extracted_claims.json`, keyed by `doc_id` (for example `{"email_001": [{"type": "contact_role", "role": "CFO", "name": "Dana Lee"}]}`); `app/ingest.py` attaches them to each `Document` as its `claims` field, so the rules are exact and testable. In the presentation, say honestly that **in production, claims would be extracted by an LLM into this same schema, then checked by the same rules.**
 
@@ -224,7 +234,7 @@ For the prototype, plant these as structured claims in `data/extracted_claims.js
 - Restricted rows and documents keep `required_entitlement`. Nothing is deleted; filtering happens at query time (section 5).
 - News not in `approved_news_sources` is excluded during indexing and logged as a flag.
 
-**Step 6: Index documents.** Chunk each document (they're short, so one chunk per document is fine; split long ones by paragraph), and store `chunks(chunk_id, doc_id, client_id, doc_type, date, required_entitlement, text)`. Only resolved documents from approved sources are chunked, so every chunk has a client. `app/retrieval.py` builds the BM25 index over chunk text when it starts (BM25 lives in memory). If time allows, add embeddings and merge with Reciprocal Rank Fusion, exactly like your ServiceNow design.
+**Step 6: Index documents.** Chunk each document (they're short, so one chunk per document is fine; split long ones by paragraph), and store `chunks(chunk_id, doc_id, client_id, doc_type, date, required_entitlement, text)`. Build the BM25 index over chunk text. Then embed every chunk with all-MiniLM-L6-v2 (normalized vectors, saved to data/embeddings.npy with a chunk\_id index). Retrieval is hybrid, exactly like your ServiceNow design: BM25 and cosine vector search run on the same filtered chunk set, merged with Reciprocal Rank Fusion (k = 60). The entitlement and client filters are applied before scoring, so restricted chunks are never candidates.
 
 ## 5. Tools, orchestration, and validation
 
@@ -239,7 +249,7 @@ Every tool in `app/tools.py` takes a `UserContext` (user\_id, entitlements), val
 | `get_metrics(client_id, since)` | Material metrics and performance, with change vs last interaction | SQL |
 | `get_opportunities(client_id)` | Pipeline to discuss (restricted rows filtered) | SQL |
 | `get_open_items(client_id)` | Open actions, overdue items, service issues | SQL |
-| `search_documents(client_id, query, doc_types, since)` | What the client asked, said, committed; prior conversations | BM25 over chunks, filtered |
+| `search_documents(client_id, query, doc_types, since)` | What the client asked, said, committed; prior conversations | Hybrid: BM25 + vector search merged with RRF, filtered |
 | `get_news(client_id, since)` | Approved recent news | Chunks where doc\_type = news |
 | `get_data_quality_flags(client_id)` | What is uncertain, conflicting, or unavailable | `data_quality_flags` |
 
@@ -469,7 +479,7 @@ About 8 hours of work. Commit to Git after every phase, so you always have a wor
 
 **Phase 3 prompt:**
 
-> Implement app/db.py, app/retrieval.py, app/tools.py, and app/audit.py per SPEC.md section 5. Every tool takes a UserContext, uses Pydantic models, filters restricted rows inside the SQL or search query, returns facts with stable evidence IDs, logs to audit\_log, and returns typed errors instead of raising. Add a test proving user u2 can never see OPP-HEL-MA or restricted documents.
+> Implement app/db.py, app/retrieval.py, app/tools.py, and app/audit.py per SPEC.md sections 4 and 5. retrieval.py does hybrid search: BM25 (rank\_bm25) plus cosine search over all-MiniLM-L6-v2 embeddings (sentence-transformers, cached to data/embeddings.npy), merged with Reciprocal Rank Fusion (k=60), with client and entitlement filters applied before scoring. Every tool takes a UserContext, uses Pydantic models, filters restricted rows inside the SQL or search query, returns facts with stable evidence IDs, logs to audit\_log, and returns typed errors instead of raising. Add a test proving user u2 can never see OPP-HEL-MA or restricted documents.
 
 **Phase 4 prompt:**
 
@@ -485,7 +495,7 @@ About 8 hours of work. Commit to Git after every phase, so you always have a wor
 
 **Phase 7:** write the README yourself, with Claude Code's help: what it does, how to run it in three commands, the architecture diagram, where the LLM is and isn't used, the scorecard output, and known limitations. Add two screenshots (Alex vs Sam). Record a 2-minute screen video of the demo as a backup in case the live demo fails.
 
-**If you fall behind:** cut in this order: the follow-up Q&A box, embeddings, the create-task button, then the audit log viewer. Never cut the restricted-data test, the validator, or the conflicts panel; those are what they're grading.
+**If you fall behind:** cut in this order: the follow-up Q&A box, the create-task button, then the audit log viewer. Never cut the restricted-data test, the validator, or the conflicts panel; those are what they're grading.
 
 ## 9. The 45-minute presentation
 
@@ -535,4 +545,4 @@ They said the presentation tests whether you can **explain the design in plain l
 - **Tools:** the same read-only tools exposed as an MCP server, so any approved assistant can reuse them, which mirrors what you built at ServiceNow.
 - **Controls:** the firm's identity system for entitlements, a full audit trail, model risk review, and a pilot with one coverage team.
 
-**Known limitations to state upfront:** synthetic data is small; claims for conflict rules are pre-structured instead of extracted; BM25 only unless embeddings were added; no real CRM integration. Saying these first shows judgment, not weakness.
+**Known limitations to state upfront:** synthetic data is small; claims for conflict rules are pre-structured instead of extracted; a small local embedding model instead of the firm's approved one; no real CRM integration. Saying these first shows judgment, not weakness.
