@@ -99,10 +99,10 @@ def normalize(name: str) -> str:
 
 
 def format_usd(amount: float) -> str:
-    """4200000 -> '$4.2M', 50000000 -> '$50M', 1200000000 -> '$1.2B'"""
+    """4200000 -> '$4.2M', 50000000 -> '$50M', 1450000000 -> '$1.45B' (up to two decimals)"""
     for size, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
         if abs(amount) >= size:
-            return f"${amount / size:.1f}".rstrip("0").rstrip(".") + suffix
+            return f"${amount / size:.2f}".rstrip("0").rstrip(".") + suffix
     return f"${amount:,.0f}"
 
 
@@ -287,7 +287,7 @@ SERIES_QUERIES = [
     "FROM revenue_metrics",
     "SELECT client_id, product || ' balance', 'SQL:holdings:' || client_id || ':' || product || ':' || as_of, "
     "as_of FROM holdings",
-    "SELECT client_id, product || ' ' || metric, "
+    "SELECT client_id, product || ' ' || replace(replace(replace(metric, '_usd', ''), '_pct', ''), '_', ' '), "
     "'SQL:performance:' || client_id || ':' || product || ':' || metric || ':' || period, as_of FROM performance",
 ]
 

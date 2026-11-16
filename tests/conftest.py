@@ -1,9 +1,13 @@
 """Shared test fixtures."""
 
-import pytest
+import os
 
-from app import load_structured, unify
-from data import generate_data as gd
+os.environ["LLM_PROVIDER"] = "mock"  # tests never call a real model, whatever .env says
+
+import pytest  # noqa: E402
+
+from app import load_structured, unify  # noqa: E402
+from data import generate_data as gd  # noqa: E402
 
 
 @pytest.fixture(scope="session")

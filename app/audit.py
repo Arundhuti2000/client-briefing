@@ -35,11 +35,16 @@ def log_tool_call(user_id: str, tool: str, args: dict, result_ids: list[str], er
         conn.close()
 
 
-def recent(limit: int = 50) -> list[dict]:
-    """Newest audit rows first."""
+def recent(limit: int = 50, user_id: str | None = None) -> list[dict]:
+    """Newest audit rows first; only one user's rows when user_id is given.
+    (The API passes the caller's ID: another user's result IDs could name restricted records.)"""
     conn = db.connect()
     try:
-        rows = conn.execute("SELECT * FROM audit_log ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
+        if user_id is None:
+            rows = conn.execute("SELECT * FROM audit_log ORDER BY rowid DESC LIMIT ?", (limit,)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM audit_log WHERE user_id = ? ORDER BY rowid DESC LIMIT ?",
+                                (user_id, limit)).fetchall()
     except sqlite3.OperationalError:
         return []  # nothing logged yet
     finally:

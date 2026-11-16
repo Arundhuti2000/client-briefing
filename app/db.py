@@ -46,6 +46,11 @@ def client(conn, client_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM clients WHERE client_id = ?", (client_id,)).fetchone()
 
 
+def aliases(conn, client_id: str) -> list[str]:
+    return [row["alias"] for row in conn.execute(
+        "SELECT alias FROM client_aliases WHERE client_id = ? ORDER BY alias", (client_id,))]
+
+
 def coverage(conn, client_id: str) -> list[sqlite3.Row]:
     return conn.execute("SELECT * FROM coverage WHERE client_id = ? ORDER BY since, banker_name",
                         (client_id,)).fetchall()
@@ -57,6 +62,52 @@ def contacts(conn, client_id: str) -> list[sqlite3.Row]:
 
 def user(conn, user_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
+
+
+def users(conn) -> list[sqlite3.Row]:
+    return conn.execute("SELECT * FROM users ORDER BY user_id").fetchall()
+
+# --- what a citation chip opens --------------------------------------------------
+
+# For each table: the SQL expression that rebuilds its evidence-ID key (as the tools
+# build it), and the column that dates the record. Only these tables can be opened.
+SOURCE_TABLES = {
+    "clients": ("client_id", "updated_at"),
+    "contacts": ("contact_id", "updated_at"),
+    "coverage": ("client_id || ':' || banker_name", "since"),
+    "revenue_metrics": ("client_id || ':' || period", "as_of"),
+    "holdings": ("client_id || ':' || product || ':' || as_of", "as_of"),
+    "performance": ("client_id || ':' || product || ':' || metric || ':' || period", "as_of"),
+    "opportunities": ("opp_id", "updated_at"),
+    "open_actions": ("action_id", "due_date"),
+    "service_issues": ("issue_id", "opened"),
+}
+
+
+def source_row(conn, table: str, key: str, entitlements: list[str]) -> sqlite3.Row | None:
+    """The record behind an evidence ID like SQL:opportunities:OPP-NOR-TM, if the user may see it."""
+    if table not in SOURCE_TABLES:
+        return None  # table names are whitelisted, never taken from the request
+    key_sql, _ = SOURCE_TABLES[table]
+    sql, params = f"SELECT * FROM {table} WHERE {key_sql} = ?", [key]
+    if table == "opportunities":  # the only typed table with restricted rows
+        condition, extra = entitlement_filter("required_entitlement", entitlements)
+        sql, params = f"{sql} AND {condition}", params + extra
+    return conn.execute(sql, params).fetchone()
+
+
+def visible_document(conn, doc_id: str, entitlements: list[str]) -> list[sqlite3.Row]:
+    """A document's chunks, if the user may see it. Documents that were never indexed
+    (unattached, or from an unapproved news source) can't be opened."""
+    condition, params = entitlement_filter("required_entitlement", entitlements)
+    return conn.execute(f"SELECT * FROM chunks WHERE doc_id = ? AND {condition} ORDER BY chunk_id",
+                        [doc_id, *params]).fetchall()
+
+
+def visible_flag(conn, flag_id: str, entitlements: list[str]) -> sqlite3.Row | None:
+    condition, params = entitlement_filter("required_entitlement", entitlements)
+    return conn.execute(f"SELECT * FROM data_quality_flags WHERE flag_id = ? AND {condition}",
+                        [flag_id, *params]).fetchone()
 
 # --- numbers --------------------------------------------------------------------
 
@@ -113,6 +164,18 @@ def flags(conn, client_id: str, entitlements: list[str]) -> list[sqlite3.Row]:
     condition, params = entitlement_filter("required_entitlement", entitlements)
     return conn.execute(f"SELECT * FROM data_quality_flags WHERE client_id = ? AND {condition} ORDER BY flag_id",
                         [client_id, *params]).fetchall()
+
+def hidden_restricted_content(conn, entitlements: list[str]) -> list[sqlite3.Row]:
+    """Restricted records this user may NOT see, as (record_id, text).
+    Only for the validator's leak check: the result is used to reject output and is
+    never shown to the user or sent to the LLM."""
+    if entitlements:
+        hidden = f"required_entitlement NOT IN ({', '.join('?' for _ in entitlements)})"
+    else:
+        hidden = "1"
+    sql = (f"SELECT doc_id AS record_id, text FROM chunks WHERE {hidden} "
+           f"UNION ALL SELECT opp_id, product || ': ' || next_step FROM opportunities WHERE {hidden}")
+    return conn.execute(sql, [*entitlements, *entitlements]).fetchall()
 
 # --- tables with no restricted content ----------------------------------------------
 

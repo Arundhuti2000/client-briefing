@@ -51,7 +51,7 @@ class Fact(BaseModel):
 class ToolResult(BaseModel):
     ok: bool
     facts: list[Fact] = []
-    error: str | None = None       # invalid_input, client_not_found, ambiguous_client,
+    error: str | None = None       # invalid_input, client_not_found, ambiguous_client, not_found,
                                    # data_unavailable, audit_unavailable, internal_error
     candidates: list[str] = []     # client IDs the user might have meant
 
@@ -81,6 +81,10 @@ class SearchRequest(ClientRequest):
 
 class NewsRequest(ClientRequest):
     since: dt.date | None = None
+
+
+class SourceRequest(Request):
+    evidence_id: str = Field(pattern=r"^(SQL|DOC|FLAG):.+$", max_length=200)
 
 
 class ToolError(Exception):
@@ -134,7 +138,7 @@ def require_client(conn, client_id: str) -> str:
     return canonical
 
 # ---------------------------------------------------------------------------
-# The eight tools
+# The eight briefing tools, plus get_source for the citation chips
 # ---------------------------------------------------------------------------
 
 
@@ -256,6 +260,35 @@ def get_data_quality_flags(conn, user, req: ClientRequest) -> list[Fact]:
                  source="data_quality_flags",
                  details={"severity": f["severity"], "source_ids": json.loads(f["source_ids"])})
             for f in db.flags(conn, client_id, user.entitlements)]
+
+@tool(SourceRequest)
+def get_source(conn, user, req: SourceRequest) -> list[Fact]:
+    """What a citation chip opens: the record or document behind an evidence ID.
+    Something the user may not see is 'not_found', exactly like an ID that doesn't exist,
+    so the answer never reveals that a restricted record is there."""
+    kind, _, key = req.evidence_id.partition(":")
+    if kind == "DOC":
+        chunks = db.visible_document(conn, key, user.entitlements)
+        if not chunks:
+            raise ToolError("not_found")
+        first = chunks[0]
+        return [Fact(evidence_id=req.evidence_id, label=f"{first['doc_type']} {key}",
+                     value="\n\n".join(c["text"] for c in chunks), as_of=first["date"], source=first["source"],
+                     details={k: first[k] for k in ("doc_id", "doc_type", "client_id", "source", "date")})]
+    if kind == "FLAG":
+        flag = db.visible_flag(conn, key, user.entitlements)
+        if flag is None:
+            raise ToolError("not_found")
+        return [Fact(evidence_id=req.evidence_id, label=flag["flag_type"], value=flag["detail"], as_of=AS_OF_DATE,
+                     source="data_quality_flags",
+                     details={"severity": flag["severity"], "client_id": flag["client_id"],
+                              "source_ids": json.loads(flag["source_ids"])})]
+    table, _, row_key = key.partition(":")
+    row = db.source_row(conn, table, row_key, user.entitlements)
+    if row is None:
+        raise ToolError("not_found")
+    return [Fact(evidence_id=req.evidence_id, label=f"{table} {row_key}", value=row_key,
+                 as_of=row[db.SOURCE_TABLES[table][1]], source=table, details=dict(row))]
 
 # ---------------------------------------------------------------------------
 # Identity (not a tool): who is calling, and what may they see?

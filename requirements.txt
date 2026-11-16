@@ -9,3 +9,4 @@ pyyaml
 python-dotenv
 sentence-transformers
 numpy
+httpx
