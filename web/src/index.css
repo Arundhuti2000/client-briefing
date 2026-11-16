@@ -1,0 +1,11 @@
+/* Base styles. The workspace layout is built in Phase 5. */
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  color: #1f2328;
+  background: #ffffff;
+}
+
+main {
+  padding: 24px;
+}

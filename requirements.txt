@@ -1,0 +1,9 @@
+google-genai
+pydantic
+rank_bm25
+rapidfuzz
+fastapi
+uvicorn
+pytest
+pyyaml
+python-dotenv
