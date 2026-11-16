@@ -200,16 +200,19 @@ Emails and news carry no entitlement metadata, so they load as unrestricted (`st
 
 ## 4. Data unification (all code, no LLM)
 
-`app/unify.py` runs once after data generation and writes clean tables plus a `data_quality_flags` table. Every flag has: `flag_id, client_id, flag_type, detail, source_ids, severity`. The briefing's “Uncertain, conflicting, or unavailable” section reads straight from this table.
+`app/unify.py` runs once after data generation and writes clean tables plus a `data_quality_flags` table. Every flag has: `flag_id, client_id, flag_type, detail, source_ids, severity, required_entitlement`. Severity is `low`, `medium`, or `high`. A flag inherits the strictest entitlement of its sources, so the panel can never leak a restricted record. The briefing's “Uncertain, conflicting, or unavailable” section reads straight from this table.
+
+**Run order.** `make unify` first reloads `briefing.db` from `data/raw/` (the staging step), because the rules change the typed tables in place; reloading makes a second run give the same result. It then merges duplicate clients (step 2) *before* resolving names (step 1), so a merged record's name points at the survivor instead of looking ambiguous.
 
 **Step 1: Entity resolution (traps T1, T7, T8).** Resolve every `client_ref` to a canonical `client_id`:
 
 1. If it's already a valid ID, use it.
 2. Exact match on a normalized name or alias (lowercase, strip punctuation and suffixes like LLC, Inc, Partners).
 3. Fuzzy match with `rapidfuzz` on legal names and aliases: score ≥ 90 resolves; 75 to 89 goes to the review queue; below 75 stays unresolved.
-4. For documents with no `client_ref` (news), search the text for known names and aliases.
+4. For documents with no `client_ref` (news), search the text for known names and aliases as whole words. Exactly one client found resolves; two or more is ambiguous.
+5. **Pipeline rows:** resolve each `stg_pipeline_opportunities.client_name` the same way and write the result to `opportunities.client_id`. A name that doesn't resolve leaves `client_id` empty and raises a flag, so that opportunity never appears in any briefing.
 
-Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolved or ambiguous documents go into `unresolved_refs` and are **never attached to a client**. They appear as a flag, so the demo can show: “1 news item mentions ‘Arbor’ but couldn't be matched confidently.”
+Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolved or ambiguous documents go into `unresolved_refs` and are **never attached to a client**. They appear as a flag, so the demo can show: “1 news item mentions ‘Arbor’ but couldn't be matched confidently.” The *flag* (never the document) is shown on the closest client's briefing when the fuzzy score is at least 50; below that it belongs to no client.
 
 **Step 2: Deduplication (T2, T3).**
 
@@ -218,14 +221,14 @@ Store the result in `doc_client_map(doc_id, client_id, method, score)`. Unresolv
 
 **Step 3: Staleness (T4, T12).** Each fact carries an `as_of` or `date`. Rules:
 
-- A metric older than 120 days, when a newer one exists → `stale`.
+- A metric older than 120 days, when a newer one exists → `stale`. Old quarters are history, not errors, so this is one low-severity flag per client listing the superseded series; tools always use the latest value.
 - A figure stated in a prior briefing that differs from the latest SQL value → `stale_statement`, showing both values and dates.
 - An open action past its due date → `overdue`.
 
 **Step 4: Conflicts (T5, T6).** Keep it rule-based and explicit:
 
 - **Contact role conflict:** a document names someone in a role (from a small extraction step or a simple pattern like “CFO is X”) that differs from `contacts` → `conflict`, prefer the newer source, show both.
-- **Commitment vs pipeline:** a note mentions a commitment on a product while that product's opportunity is Lost or Closed → `conflict`.
+- **Commitment vs pipeline:** a note mentions a commitment on a product while that product's opportunity is Lost → `conflict`. (The pipeline has no Closed stage, and Won means the client did commit, so it isn't a conflict.)
 
 For the prototype, plant these as structured claims in `data/extracted_claims.json`, keyed by `doc_id` (for example `{"email_001": [{"type": "contact_role", "role": "CFO", "name": "Dana Lee"}]}`); `app/ingest.py` attaches them to each `Document` as its `claims` field, so the rules are exact and testable. In the presentation, say honestly that **in production, claims would be extracted by an LLM into this same schema, then checked by the same rules.**
 
@@ -234,7 +237,14 @@ For the prototype, plant these as structured claims in `data/extracted_claims.js
 - Restricted rows and documents keep `required_entitlement`. Nothing is deleted; filtering happens at query time (section 5).
 - News not in `approved_news_sources` is excluded during indexing and logged as a flag.
 
-**Step 6: Index documents.** Chunk each document (they're short, so one chunk per document is fine; split long ones by paragraph), and store `chunks(chunk_id, doc_id, client_id, doc_type, date, required_entitlement, text)`. Build the BM25 index over chunk text. Then embed every chunk with all-MiniLM-L6-v2 (normalized vectors, saved to data/embeddings.npy with a chunk\_id index). Retrieval is hybrid, exactly like your ServiceNow design: BM25 and cosine vector search run on the same filtered chunk set, merged with Reciprocal Rank Fusion (k = 60). The entitlement and client filters are applied before scoring, so restricted chunks are never candidates.
+**Step 6: Index documents.** Chunk each document (they're short, so one chunk per document is fine; split long ones by paragraph), and store `chunks(chunk_id, doc_id, client_id, doc_type, date, required_entitlement, text, source)`. Only resolved documents from approved sources are chunked, so every chunk has a client. Then embed every chunk with all-MiniLM-L6-v2 (normalized vectors, saved to data/embeddings.npy with a chunk\_id index in `data/embeddings_index.json`). Retrieval is hybrid, exactly like your ServiceNow design: BM25 and cosine vector search run on the same filtered chunk set, merged with Reciprocal Rank Fusion (k = 60). The entitlement and client filters are applied before scoring, so restricted chunks are never candidates.
+
+Implementation details (`app/retrieval.py`):
+
+- The BM25 index is built **per search, over only the filtered candidates**, so restricted text can't even shift other scores. It uses BM25Plus because per-client corpora are tiny, and classic BM25Okapi scores words found in half the documents as zero or less. Common words (“the”, “who”) are ignored, and only chunks sharing a keyword with the query enter the keyword ranking.
+- The vector ranking keeps chunks with cosine similarity of at least 0.25. Measured on our chunks, related text scores about 0.3–0.55 and unrelated text 0.11 or lower, so an unrelated query returns nothing.
+- RRF merges by rank, not score, so the two score scales never need to be compared.
+- Only the query is embedded at search time. The model loads from the local cache once it's downloaded, so searches never touch the network and the demo works offline.
 
 ## 5. Tools, orchestration, and validation
 
@@ -270,16 +280,22 @@ class Fact(BaseModel):
     value: float | str
     as_of: date
     source: str
+    details: dict = {}           # the record's other fields (stage, owner, overdue...) for code
 
 class ToolResult(BaseModel):
     ok: bool
     facts: list[Fact] = []
-    error: str | None = None   # e.g. "client_not_found", "ambiguous_client"
+    error: str | None = None     # e.g. "client_not_found", "ambiguous_client"
+    candidates: list[str] = []   # client IDs the user might have meant
 ```
 
-**Error handling:** tools never raise into the orchestrator. They return `ok=False` with a typed error, and the section shows “unavailable” instead of failing the whole briefing. Ambiguous client names return candidates, so the UI can ask the user to pick.
+**Evidence IDs** name the table and the row's natural key: `SQL:clients:C001`, `SQL:contacts:CT001`, `SQL:coverage:C001:Alex Morgan`, `SQL:revenue_metrics:C001:2026Q3`, `SQL:holdings:C001:Operating Deposits:2026-09-30`, `SQL:performance:C001:Custody:assets_under_custody_usd:2026Q3`, `SQL:opportunities:OPP-NOR-TM`, `SQL:open_actions:A-001`, `SQL:service_issues:SI-001`, `DOC:note_001`, `FLAG:F007`. `get_metrics` returns each series' latest value and its value at `since`, each as its own fact (so both numbers can be cited), with the change computed in code.
 
-**Restricted data:** filter with a WHERE clause, for example `WHERE restricted = 0 OR required_entitlement IN (:entitlements)`. Never count or summarize restricted rows for a user who can't see them. Even “1 hidden opportunity” leaks information.
+**Error handling:** tools never raise into the orchestrator. They return `ok=False` with a typed error (`invalid_input`, `client_not_found`, `ambiguous_client`, `data_unavailable`, `audit_unavailable`, `internal_error`), and the section shows “unavailable” instead of failing the whole briefing. Ambiguous or unknown client names return candidates, so the UI can ask the user to pick. One decorator in `app/tools.py` applies validation, error handling, and auditing to every tool. If the audit row can't be written, the tool returns no facts: no audit, no data.
+
+**Read-only by construction:** `app/db.py` holds every SQL query, and the tools open the database in SQLite's read-only mode (`mode=ro`), so a tool can't write even by mistake. The audit log is the only write.
+
+**Restricted data:** filter with a WHERE clause inside the query. Every row carries a `required_entitlement` (unrestricted rows carry `standard`, which every user has), so one rule covers opportunities, chunks, and flags: `WHERE required_entitlement IN (:entitlements)`. Never count or summarize restricted rows for a user who can't see them. Even “1 hidden opportunity” leaks information.
 
 ### Orchestration (a fixed plan)
 
@@ -382,7 +398,7 @@ Generate the Helios briefing as **Alex**, then switch to **Sam** and regenerate.
 | Access filtering | Entitlement filter inside the SQL and search query, before the LLM sees anything |
 | No leakage by count | Restricted rows are excluded entirely, not counted or summarized |
 | Prompt injection | Documents wrapped as data; the system prompt says documents can't give instructions; the validator rejects claims without evidence |
-| Audit | `audit_log(ts, user_id, tool, args, result_ids)` for every tool call; viewable in the UI |
+| Audit | `audit_log(ts, user_id, tool, args, result_ids, error)` for every tool call, failed ones included; no audit row, no data; viewable in the UI |
 | Approved sources | Only news from `approved_news_sources` is indexed |
 | Graceful failure | Any tool error shows “unavailable” for that section; the rest of the briefing still renders |
 
