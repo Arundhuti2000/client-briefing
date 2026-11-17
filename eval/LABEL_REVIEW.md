@@ -1,14 +1,14 @@
 # Retrieval label pre-review
 
-The retrieval metrics (P@5, R@5, MRR, nDCG@5) depend on hand-made labels: for each question, the
+The retrieval metrics (P@5, R@5, MRR, nDCG@5) depend on labels written with AI assistance: for each question, the
 documents that answer it. This file is a pre-review for a person to decide on; **no label file was
 changed** (`eval/retrieval_set.yaml`, `eval/dev2/retrieval_set.yaml`, `eval/holdout/retrieval_set.yaml`).
 
 For every question it shows the labelled relevant documents and the top 5 results of the hybrid
 search the app uses (BM25 + vectors, merged with RRF), each with its title and date. The question
 lists and top 5 come from `python -m eval.label_review`, run on fresh copies of each dataset (the dev
-data includes the red-team documents, as in `make eval`). The notes are a reviewer's judgment after
-reading the documents.
+data includes the red-team documents, as in `make eval`). The notes come from an automated pre-review (Claude Code), for the developer to review;
+human review is pending.
 
 Kinds of note:
 - **Missing**: a document that answers the question is not labelled.

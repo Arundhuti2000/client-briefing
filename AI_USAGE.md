@@ -14,11 +14,12 @@ This prototype was built with AI assistance, the way I'd expect an AI enablement
 ## How I worked
 
 1. **Spec first.** I turned the assignment into a written spec (`SPEC.md`, drafted with Claude, then edited and rewritten by me as the build evolved) and a short set of project rules (`CLAUDE.md`), including: *"Never let the LLM produce a number,"* *"every tool is read-only and filters restricted data inside the query,"* and *"keep code simple and readable; I need to explain every part."*
-2. **One phase at a time.** Data → unification → tools and search → orchestration and validation → UI → evaluation. Each phase was run, checked and committed before the next.
-3. **Written briefs for every change in direction,** so each decision has a record. The full list is in `DECISIONS.md`.
+2. **Phase by phase.** Data → unification → tools and search → orchestration and validation → UI → evaluation. I reviewed each phase's output before moving on, and committed regularly; some commits bundle several related changes.
+3. **Written briefs for each change in direction,** with the spec kept in sync with the code. The full list of decisions is in `DECISIONS.md`.
 4. **AI output treated like a teammate's pull request:** run it, read it, test it, and push back when it's wrong.
+5. **The final stage ran from a written plan.** README results, the real-model evaluation, a label pre-review, a CI check, the demo cache and an end-to-end test were run by Claude Code overnight from a nine-step plan I set, with a cap of 25 real AI requests and tests after every step. I reviewed the results the next morning.
 
-**Build approach: documentation-driven.** The build followed the documentation at every step. `SPEC.md` was the single source of truth, and `CLAUDE.md` required reading it before every task, so no code was written without a documented design behind it. The spec laid out the build in phases (setup, synthetic data, unification, retrieval and tools, orchestration with the LLM and validator, FastAPI and React, evaluation, then README and submission), each with a "done when" condition and its own Claude Code prompt. Every phase was built from the spec, checked against its "done when" condition, and committed before the next one started. When the design changed, the spec was updated first and the code followed, so the documentation and the code never drifted apart. Once the build was complete, `SPEC.md` was rewritten as a formal system specification, with the detailed design moved into `docs/`.
+**Build approach: documentation-driven.** The build followed the documentation at every step. `SPEC.md` was the single source of truth, and `CLAUDE.md` required reading it before every task, so no code was written without a documented design behind it. The spec laid out the build in phases (setup, synthetic data, unification, retrieval and tools, orchestration with the LLM and validator, FastAPI and React, evaluation, then README and submission), each with a "done when" condition and its own Claude Code prompt. Every phase was built from the spec, checked against its "done when" condition, and committed before the next one started. When the design changed, the spec was updated alongside the code, so the documentation and the code stayed in step. Once the build was complete, `SPEC.md` was rewritten as a formal system specification, with the detailed design moved into `docs/`.
 
 ---
 
@@ -65,7 +66,7 @@ This prototype was built with AI assistance, the way I'd expect an AI enablement
 
 ## Guardrails on AI-generated work
 
-- `make test` and `make eval` after every phase; **259 tests** at submission.
+- `make test` after every phase, and `make eval` once the evaluation was built; **259 tests** at submission.
 - **Zero-tolerance checks** (restricted leakage, injection, red team) fail the run and the CI build.
 - `make eval-break` proves the leakage check fails when the access filter is off.
 - **No hand-typed results:** README numbers are generated from the evaluation run.

@@ -191,7 +191,7 @@ def presentation_numbers() -> str:
     leaked = sum(q["retrieval"][d]["restricted_retrieved"] for d in q["retrieval"])
     lines.append(f"- **Search** puts, on average, "
                  + " and ".join(f"{v:.0%} ({NAMES[d].lower()})" for d, v in hybrid.items())
-                 + f" of the labelled relevant documents in the top 5 (hand-made labels, under review); "
+                 + f" of the labelled relevant documents in the top 5 (labels written with AI assistance; automated pre-review done, human review pending); "
                    f"restricted documents returned to a user without access: {leaked}.")
     r = q["router"]
     lines.append(f"- **Follow-up routing:** {r['accuracy']:.0%} of {r['questions']} labelled questions go to the right "

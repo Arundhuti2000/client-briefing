@@ -41,7 +41,7 @@ All business logic lives in `app/`. The API, the evaluation harness, the MCP ser
 | Evaluation | `eval/run_eval.py` | Builds each dataset fresh in a temporary folder, runs the golden set, prints the scorecard and writes `eval/last_run.json` (`make eval-break` writes `eval/history/eval_break.json` instead). Exits non-zero when a zero-tolerance check fails. |
 | Evaluation | `eval/quality.py` | Quality metrics beside the scorecard: retrieval metrics, detector precision and recall on generated perturbations, router accuracy and faithfulness of AI-written bullets. |
 | Evaluation | `eval/report_md.py` | `make results`: rewrites the results sections of `README.md` and `docs/EVALUATION.md` from the saved reports. |
-| Evaluation | `eval/label_review.py` | Prints a Markdown pre-review of the hand-made retrieval labels. Never changes them. |
+| Evaluation | `eval/label_review.py` | Prints a Markdown pre-review of the retrieval labels (written with AI assistance; human review pending). Never changes them. |
 | MCP | `mcp_server/server.py` | The eight briefing tools and `get_source` over the official Python MCP SDK (stdio), marked read-only. Every call takes a `user_id`. See [API.md](API.md#mcp-server). |
 | Frontend | `web/src/App.tsx` | The application shell and its state: current user, page, open client, step, per-user briefing cache, deep links. |
 | Frontend | `web/src/api.ts` | Typed calls to every endpoint; types mirror the Pydantic models. `API_BASE` comes from `VITE_API_BASE`. |

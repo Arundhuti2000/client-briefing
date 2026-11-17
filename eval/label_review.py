@@ -1,8 +1,9 @@
-"""Pre-review of the hand-made retrieval labels: for every question, the labelled relevant
+"""Pre-review of the retrieval labels (written with AI assistance; human review pending): for every question, the labelled relevant
 documents and the top 5 hybrid results (the ranking the app uses), each with its title, so a
 person can judge whether a label is missing or wrong. It never changes the labels.
 
-Writes the review to stdout as Markdown; eval/LABEL_REVIEW.md is that output plus a reviewer's notes.
+Writes the review to stdout as Markdown; eval/LABEL_REVIEW.md is that output plus notes from an automated
+pre-review (Claude Code), for the developer to review.
 Run:  python -m eval.label_review > review.md
 """
 
