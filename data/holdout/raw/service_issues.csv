@@ -1,3 +1,3 @@
 issue_id,client_id,summary,severity,status,opened,closed
-SI-102,C101,Statement export missing reference field,LOW,CLOSED,11/05/2026,29/05/2026
-SI-101,C102,Wire confirmations arriving a day late,Medium,Open,05/10/2026,
+SI-301,C301,EUR payments to Mexican suppliers rejected for a missing purpose code,High,Open,03/11/2026,
+SI-302,C302,Cash sweep ran twice on 31 October,Medium,Closed,31/10/2026,04/11/2026

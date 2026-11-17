@@ -20,7 +20,8 @@ from app import ask, audit, db, orchestrator, retrieval, tools, workflow
 from app.orchestrator import Briefing, BriefingError
 from app.tasks import Task, TaskError, TaskRequest, create_task
 from app.tools import ClientId, Fact, UserContext
-from app.wording import AS_OF_DATE
+from app.unify import STALE_AFTER_DAYS
+from app.wording import AS_OF_DATE, day_month, period_text, signed_change, value_text
 from eval import run_eval
 
 
@@ -82,6 +83,42 @@ class FlagSummary(BaseModel):
     housekeeping: bool              # data clean-up, not something to raise at the meeting
 
 
+class MetricPoint(BaseModel):
+    period: str                     # "Q3 2026", or the balance date ("30 Sep") for holdings
+    value: float                    # raw, only to draw the trend line
+    text: str                       # formatted by code: "$2.31M", "8.6%"
+    as_of: dt.date
+    evidence_id: str
+
+
+class MetricSeries(BaseModel):
+    """One metric over time, for the Clients page. Every number is from SQL and formatted here."""
+    label: str                      # "Revenue", "Wallet share", "Operating deposits"
+    unit: str                       # usd or pct
+    points: list[MetricPoint]       # oldest first
+    change: str | None              # latest vs the one before: "+$270K", "+0.7 pts"
+    stale: bool                     # the latest value is older than STALE_AFTER_DAYS
+
+
+def metric_series(user: UserContext, client_id: str) -> list[MetricSeries]:
+    """Every metric series from the audited, read-only get_metric_history tool."""
+    by_label: dict[str, list[Fact]] = {}
+    for f in tools.get_metric_history(user, client_id=client_id).facts:
+        by_label.setdefault(f.label, []).append(f)
+    series = []
+    first = ["Revenue", "Wallet share"]  # then the others, in table order
+    for label, facts in sorted(by_label.items(), key=lambda item: first.index(item[0]) if item[0] in first else 2):
+        unit, latest = facts[0].details["unit"], facts[-1]
+        change = signed_change(round(latest.value - facts[-2].value, 4), unit) if len(facts) > 1 else None
+        series.append(MetricSeries(
+            label=label, unit=unit, change=change,
+            stale=(AS_OF_DATE - latest.as_of).days > STALE_AFTER_DAYS,
+            points=[MetricPoint(period=period_text(f.details["period"]) or day_month(f.as_of), value=f.value,
+                                text=value_text(f.value, unit), as_of=f.as_of, evidence_id=f.evidence_id)
+                    for f in facts]))
+    return series
+
+
 class ClientSummary(BaseModel):
     """One row of the meetings list: who, when, and what needs the banker before the meeting."""
     client_id: str
@@ -94,6 +131,7 @@ class ClientSummary(BaseModel):
     conflicts: list[str]            # titles of conflict flags: the banker decides these
     heads_up: list[str]             # titles of the other flags that need attention (not housekeeping)
     flags: list[FlagSummary]        # every flag this user may see, for the Data health page
+    metrics: list[MetricSeries] = []  # every metric over time, for the trend lines
 
 
 class AuditRow(BaseModel):
@@ -160,7 +198,8 @@ def client_summary(user: UserContext, client_id: str) -> ClientSummary | None:
                          flags=[FlagSummary(title=f.details["title"], detail=str(f.value), flag_type=f.label,
                                             severity=f.details["severity"],
                                             housekeeping=f.label in orchestrator.HOUSEKEEPING)
-                                for f in sorted(flags.facts, key=flag_order)])
+                                for f in sorted(flags.facts, key=flag_order)],
+                         metrics=metric_series(user, client_id))
 
 
 @app.get("/clients", response_model=list[ClientSummary])

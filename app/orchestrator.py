@@ -127,6 +127,7 @@ class FlagRow(BaseModel):
     detail: str
     source_ids: list[str]
     evidence_id: str
+    uses: str | None = None             # conflicts: the source the briefing uses (shown as "Suggested")
 
 
 class LLMRun(BaseModel):
@@ -280,6 +281,14 @@ def to_evidence(f: Fact, caveats: dict[str, tuple[str, str]]) -> Evidence:
     caveat, caveat_id = caveats.get(f.evidence_id, (None, None))
     return Evidence(evidence_id=f.evidence_id, kind=kind, label=evidence_label(f), text=describe(f), as_of=f.as_of,
                     source=f.source, suggestion=suggestion(f), caveat=caveat, caveat_id=caveat_id)
+
+
+def missing_sources(user: UserContext, flags: list[Fact], have: set[str]) -> list[Fact]:
+    """Both sides of every conflict, so Check can offer the choice even when a document was not
+    among the top search results. get_source applies the same entitlement filter (and a flag is
+    only visible to users who may see all of its sources)."""
+    wanted = dict.fromkeys(s for f in flags for s in f.details["source_ids"] if s not in have)
+    return [fact for source_id in wanted for fact in tools.get_source(user, evidence_id=source_id).facts]
 
 
 def merge(items: list[Evidence]) -> list[Evidence]:
@@ -536,10 +545,13 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
                 section.status, section.note = "empty", "Nothing on file for this question."
         sections.append(section)
 
-    # Everything a chip can open: the bundles, new documents, and every row of the actions
-    # table (done actions are shown there but are not evidence for any section)
+    # Everything a chip can open: the bundles, new documents, every row of the actions table
+    # (done actions are shown there but are not evidence for any section), and both sides of
+    # every conflict (for the Check step; not sent to the LLM)
     all_evidence = merge([e for b in bundles.values() for e in b.evidence]
                          + [to_evidence(f, caveats) for f in recent_docs + facts["open_items"]])
+    all_evidence += [to_evidence(f, caveats)
+                     for f in missing_sources(user, conflicts, {e.evidence_id for e in all_evidence})]
     return Briefing(
         client_id=client_id, client_name=client.value, segment=client.details["segment"],
         region=client.details["region"], user_id=user.user_id, prepared_for=prepared_for(user),
@@ -565,7 +577,7 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
                  for f in facts["open_items"] if f.source == "open_actions"],
         flags=[FlagRow(flag_id=f.evidence_id.removeprefix("FLAG:"), flag_type=f.label, title=f.details["title"],
                        severity=f.details["severity"], housekeeping=f.label in HOUSEKEEPING, detail=f.value, source_ids=f.details["source_ids"],
-                       evidence_id=f.evidence_id) for f in flags],
+                       evidence_id=f.evidence_id, uses=f.details.get("uses")) for f in flags],
         evidence={e.evidence_id: e for e in all_evidence},
         llm_runs=[LLMRun(provider=r.provider, model=r.model, cached=r.cached, notes=r.notes, seconds=r.seconds,
                          requests=r.requests, tokens_in=r.tokens_in, tokens_out=r.tokens_out)

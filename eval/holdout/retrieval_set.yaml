@@ -1,15 +1,16 @@
-# Retrieval set for the held-out dataset. Review and correct the labels by hand.
-- {client: C101, user: u2, question: "Who will attend the August planning session?", relevant: [email_101]}
-- {client: C101, user: u2, question: "What did the client commit to on commodity hedging?", relevant: [note_101]}
-- {client: C101, user: u2, question: "Did Tomas Silva ask for a fuel hedging analysis?", relevant: [note_101]}
-- {client: C101, user: u2, question: "Can trade finance fund the electric truck fleet?", relevant: [note_102, research_101, brief_101]}
-- {client: C101, user: u2, question: "When are the beneficial ownership forms due?", relevant: [email_103]}
-- {client: C101, user: u2, question: "What does Grace Okoro want to review before we meet?", relevant: [email_104]}
-- {client: C101, user: u2, question: "How many electric trucks did they add?", relevant: [news_101]}
-- {client: C101, user: u2, question: "What revenue did the February briefing report?", relevant: [brief_101]}
-- {client: C102, user: u2, question: "What are Meridian's plans for payment operations?", relevant: [note_104]}
-- {client: C102, user: u2, question: "Who handles day-to-day treasury at Meridian?", relevant: [brief_102, note_104]}
-- {client: C102, user: u2, question: "How are mid-stage biotechs funding themselves?", relevant: [research_102]}
-- {client: C102, user: u2, question: "Did they report trial results?", relevant: [news_102]}
-- {client: C102, user: u1, question: "What is Project Lantern?", relevant: [note_103]}
-- {client: C102, user: u2, question: "What is Project Lantern?", relevant: []}
+# Retrieval set for the held-out dataset, round 2. Review and correct the labels by hand.
+- {client: C301, user: u2, question: "How much of their US invoices did they want to finance?", relevant: [note_301]}
+- {client: C301, user: u2, question: "When does the Mexico plant start production?", relevant: [note_301, news_301, research_301]}
+- {client: C301, user: u2, question: "When does Jonas Weber need the hedging proposal?", relevant: [email_302]}
+- {client: C301, user: u2, question: "What was relationship revenue before the plant visit?", relevant: [email_301]}
+- {client: C301, user: u2, question: "Why are payments to Mexican suppliers failing?", relevant: [email_302]}
+- {client: C301, user: u1, question: "What is Project Lindwurm?", relevant: [brief_301]}
+- {client: C301, user: u2, question: "What is Project Lindwurm?", relevant: []}
+- {client: C302, user: u2, question: "How much cash do they keep in money market funds?", relevant: [email_311]}
+- {client: C302, user: u2, question: "How fast is annual recurring revenue growing?", relevant: [email_312]}
+- {client: C302, user: u2, question: "How big was the growth round?", relevant: [news_311, note_311]}
+- {client: C302, user: u2, question: "Can the credit facility be sized on recurring revenue?", relevant: [note_311]}
+- {client: C302, user: u2, question: "When will the KYC documents arrive?", relevant: [email_313]}
+- {client: C303, user: u2, question: "How many yards does Cedar Hollow run?", relevant: [note_321]}
+- {client: C303, user: u2, question: "When do they want the equipment term sheet?", relevant: [email_321]}
+- {client: C303, user: u2, question: "How seasonal is their business?", relevant: [note_321]}

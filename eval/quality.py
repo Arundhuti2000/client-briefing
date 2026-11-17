@@ -30,19 +30,33 @@ from app.wording import AS_OF_DATE
 K = 5
 SEED = 7  # the perturbations are random but repeatable
 
-NOTE = [
-    "Proves: on these two synthetic datasets, the rules resolve aliases, flag the planted conflicts and stale "
-    "data, never send restricted records to a user without access, and never repeat planted instructions.",
-    "Proves: numbers and citations in the output trace back to SQL and to sources the user may open.",
-    "Proves: the leakage and injection checks can fail (make eval-break turns the filter off and they do).",
-    "Doesn't prove: that it works on real client data, whose wording and mess are wider than any generator's.",
-    "Doesn't prove: retrieval quality at scale (a few dozen documents per client) or that the labels are right; "
-    "the relevant-document labels are hand-made and should be reviewed.",
-    "Doesn't prove: that AI-written prose is good or complete; claim faithfulness here is a word-overlap and "
-    "number check, not a human judgment, and it only runs with a real model (make eval-real).",
-    "Doesn't prove: robustness to attacks beyond the planted ones (new phrasings of injected instructions, "
-    "poisoned numbers, social engineering).",
-]
+NOTE = {  # "What this does and doesn't prove", printed and shown on the Evaluations page
+    "proves": [
+        "On both synthetic datasets the rules resolve aliases, flag the planted conflicts and stale data, never "
+        "send restricted records to a user without access, and never repeat planted instructions.",
+        "Numbers and citations in the output trace back to SQL and to sources the user may open.",
+        "The leakage and injection checks can fail: make eval-break turns the access filter off and they do.",
+    ],
+    "not_proves": [
+        {"title": "Real client data",
+         "detail": "Real wording and mess are wider than any generator's."},
+        {"title": "Retrieval at scale",
+         "detail": "Only a few dozen documents per client, and the relevant-document labels are hand-made and "
+                   "need review."},
+        {"title": "Quality of AI prose",
+         "detail": "Faithfulness here is a word-overlap and number check, not human judgment, and it only runs "
+                   "with a real model (make eval-real)."},
+        {"title": "Unbiased detector scores",
+         "detail": "The misspelt-suffix, middle-initial and extra-product-word rules were added after this report "
+                   "found those misses, and both datasets' perturbations come from the same generator, so those "
+                   "scores are regression checks, not fresh estimates."},
+        {"title": "A blind held-out test",
+         "detail": "Both held-out rounds were written by the same person who wrote the rules, so they are not "
+                   "blind. Real client data, or a set written by someone else, would be a fairer test."},
+        {"title": "Attacks beyond the planted ones",
+         "detail": "New phrasings of injected instructions, poisoned numbers and social engineering are untested."},
+    ],
+}
 
 # ---------------------------------------------------------------------------
 # Retrieval
@@ -178,12 +192,19 @@ def detector_db(conn) -> sqlite3.Connection:
 
 
 def flagged(memory, detector, client_id: str, claims: list[dict], doc_type: str = "email") -> bool:
-    memory.execute("DELETE FROM data_quality_flags")
-    doc = Document(doc_id="probe_1", doc_type=doc_type, client_ref=client_id, date=dt.date(2026, 6, 1),
-                   author="probe", source="email", restricted=False, required_entitlement="standard",
-                   text="probe", claims=claims)
-    detector(memory, [doc], {"probe_1": client_id})
-    return memory.execute("SELECT COUNT(*) FROM data_quality_flags").fetchone()[0] > 0
+    """Run one case. Detectors may update the data (a newer document replaces a contact), so every
+    case starts from the same data: the changes are rolled back afterwards."""
+    memory.execute("SAVEPOINT probe")
+    try:
+        memory.execute("DELETE FROM data_quality_flags")
+        doc = Document(doc_id="probe_1", doc_type=doc_type, client_ref=client_id, date=dt.date(2026, 6, 1),
+                       author="probe", source="email", restricted=False, required_entitlement="standard",
+                       text="probe", claims=claims)
+        detector(memory, [doc], {"probe_1": client_id})
+        return memory.execute("SELECT COUNT(*) FROM data_quality_flags").fetchone()[0] > 0
+    finally:
+        memory.execute("ROLLBACK TO probe")
+        memory.execute("RELEASE probe")
 
 
 def role_conflicts(memory) -> Tally:
@@ -208,7 +229,10 @@ def role_conflicts(memory) -> Tally:
 def commitment_conflicts(memory) -> Tally:
     """A commitment on a Lost opportunity is a conflict; on a live or won one it is not."""
     tally = Tally()
-    for client_id, product, stage in memory.execute("SELECT client_id, product, stage FROM opportunities").fetchall():
+    # Only deals every user may see: the report (and its list of mistakes) is shown to everyone
+    rows = memory.execute("SELECT client_id, product, stage FROM opportunities "
+                          "WHERE required_entitlement = 'standard'").fetchall()
+    for client_id, product, stage in rows:
         lost = stage == "Lost"
         cases = [(product, lost), (product.lower(), lost), (f"{product} program", lost),
                  ("Space Insurance", False)]

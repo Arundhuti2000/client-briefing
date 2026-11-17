@@ -174,6 +174,7 @@ def clean_note(text) -> str | None:
 
 LENDING_WORDS = ("loan", "facility", "credit")  # balances of these products are money owed
 QUALIFIERS = {"revolving"}                       # dropped from short labels
+ACRONYMS = {"fx": "FX"}                          # kept in capitals in metric labels
 
 
 def metric_label(source: str, product: str | None, metric: str | None) -> str:
@@ -181,9 +182,9 @@ def metric_label(source: str, product: str | None, metric: str | None) -> str:
     revenue_usd -> 'Revenue', wallet_share_pct -> 'Wallet share',
     assets_under_custody_usd -> 'Assets under custody', payment_volume_usd -> 'Payment volume',
     holdings 'Operating Deposits' -> 'Operating deposits',
-    holdings 'Revolving Credit Facility' -> 'Credit facility balance'."""
+    holdings 'Revolving Credit Facility' -> 'Credit facility balance', fx_volume_usd -> 'FX volume'."""
     if source == "holdings":
         name = sentence_case(" ".join(w for w in (product or "").split() if w.lower() not in QUALIFIERS))
         return f"{name} balance" if any(word in name.lower() for word in LENDING_WORDS) else name
     words = re.sub(r"_(usd|pct)$", "", metric or "").replace("_", " ")
-    return capitalize(words)
+    return capitalize(" ".join(ACRONYMS.get(w, w) for w in words.split()))

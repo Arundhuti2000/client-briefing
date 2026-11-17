@@ -89,9 +89,11 @@ YEAR = re.compile(r"(?<![\w.,$])((?:19|20)\d{2})(?!\w|%|[.,]\d)")               
 NUMBER = re.compile(r"(?<![\w.])\$?(\d+(?:,\d{3})*(?:\.\d+)?)(%|[KMB](?![A-Za-z]))?(?![\w])")
 MULTIPLIERS = {"K": 1e3, "M": 1e6, "B": 1e9}
 
-INJECTION_RE = re.compile(r"ignore (all |any )?(previous|prior|above|earlier) instructions|"
+# "ignore / disregard / forget / override ... instructions / rules / guidance / prompt", with up to
+# 40 characters between ("ignore your instructions", "disregard all of the above rules")
+INJECTION_RE = re.compile(r"\b(ignore|disregard|forget|override)\b[\w\s,']{0,40}?\b(instructions|rules|guidelines|"
+                          r"guidance|prompt)\b|"
                           r"disregard (all |any )?(previous|prior|above|earlier)|"
-                          r"forget (all |any )?(previous|prior|earlier) instructions|"
                           r"you are now|system prompt", re.IGNORECASE)
 
 # Internal IDs that belong in citations, never in prose

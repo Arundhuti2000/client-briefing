@@ -1,0 +1,4 @@
+issue_id,client_id,summary,severity,status,opened,closed
+SI-201,C201,Store deposit reconciliation file missing 3 locations,Medium,Open,27/10/2026,
+SI-203,C203,Card terminal settlement delayed by one day,Low,Closed,14/08/2026,19/08/2026
+SI-202,C202,USD payment confirmations arriving a day late,HIGH,OPEN,02/11/2026,

@@ -79,9 +79,9 @@ export function initials(name: string): string {
     .join('')
 }
 
-// 1 -> "1 thing", 2 -> "2 things"
+// 1 -> "1 thing", 2 -> "2 things"; nouns ending in s, x, ch or sh take "es" ("2 data fixes")
 export function count(n: number, noun: string): string {
-  return `${n} ${noun}${n === 1 ? '' : 's'}`
+  return `${n} ${noun}${n === 1 ? '' : /(s|x|ch|sh)$/.test(noun) ? 'es' : 's'}`
 }
 
 export function errorMessage(error: unknown): string {

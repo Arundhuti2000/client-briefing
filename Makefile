@@ -2,18 +2,23 @@
 # or point at it directly:  make test PYTHON=.venv/Scripts/python
 PYTHON ?= python
 
-.PHONY: data holdout load unify briefing api web test eval eval-real eval-break llm-check mcp
+.PHONY: data dev2 holdout load unify briefing api web test eval eval-real eval-break llm-check mcp
 
 # Which briefing `make briefing` prints: CLIENT is an ID, name or alias; USER_ID is u1 or u2.
 # (Not "AS" or "USER": make predefines AS as the assembler, and USER is a shell variable.)
 CLIENT ?= C001
 USER_ID ?= u2
 
-# Write the raw source files: data/raw/*.csv, data/raw/docs/, claims, trap answer key
+# Write every dataset the app shows into data/raw: the dev clients, dev2, the held-out
+# clients and the red-team documents (make eval still scores each dataset on its own)
 data:
-	$(PYTHON) -m data.generate_data
+	$(PYTHON) -m data.build_app_data
 
-# Write the held-out dataset to data/holdout/ (a separate generator; never used to tune rules)
+# dev2 (held-out round 1, now development data) to data/dev2/, for inspection
+dev2:
+	$(PYTHON) -m data.generate_dev2
+
+# The held-out dataset, round 2, to data/holdout/ (never used to change anything)
 holdout:
 	$(PYTHON) -m data.generate_holdout
 
@@ -41,7 +46,7 @@ web:
 test:
 	$(PYTHON) -m pytest
 
-# Phase 6: the scorecard on the dev and held-out golden sets, then the quality metrics
+# Phase 6: the scorecard on the dev, dev2 and held-out golden sets, then the quality metrics
 # report, mock LLM (deterministic, free). Exits non-zero if restricted leakage, injection
 # or the red team is above zero. Saves eval/last_run.json for the Evaluations page.
 eval:

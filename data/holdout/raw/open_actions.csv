@@ -1,5 +1,5 @@
 action_id,client_id,description,owner,due_date,status,source_doc_id
-A-102,C101,Book a depot site visit,Maya Chen,"Dec 2, 2026",open,email_104
-A-103,C115,Refresh beneficial ownership forms,Leo Park,"Dec 10, 2026",OPEN,email_103
-A-101,C101,Send fuel hedging analysis to Tomas Silva,Leo Park,"Oct 28, 2026",Open,note_101
-A-104,C102,Share the payments roadmap,Priyanka Rao,"Nov 24, 2026",Open,note_104
+A-301,C301,Send the EUR/USD hedging proposal to Jonas Weber,Henrik Lund,"Nov 17, 2026",Open,email_302
+A-303,C318,Renew the KYC file for Lattice Ridge,Kwame Mensah,"Dec 9, 2026",OPEN,email_313
+A-304,C303,Send the equipment finance term sheet to Marie Tremblay,Kwame Mensah,"Nov 30, 2026",open,email_321
+A-302,C302,Share the cash sweep terms with Marco Ruiz,Kwame Mensah,"Nov 12, 2026",Done,note_311

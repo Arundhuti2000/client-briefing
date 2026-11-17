@@ -38,8 +38,11 @@ CLIENT_MERGE_SCORE = 92  # name similarity that marks two client records as dupl
 STALE_AFTER_DAYS = 120
 MAX_CHUNK_CHARS = 1000   # longer documents are split by paragraph
 
-LEGAL_SUFFIXES = {"llc", "inc", "ltd", "plc", "corp", "partners"}
-SUFFIX_TYPO_SCORE = 85   # a last word this close to a long legal suffix is a misspelt suffix
+LEGAL_SUFFIXES = {"llc", "inc", "ltd", "plc", "corp", "partners",  # abbreviations, and
+                  "limited", "incorporated", "corporation"}         # the same words in full
+TYPO_TOLERANT_SUFFIXES = {"partners"}  # "limited" is too close to "unlimited" (88), "incorporated" to "corporate" (86)
+SUFFIX_TYPO_SCORE = 85   # a last word this close to "partners" is a misspelt suffix
+HONORIFICS = {"dr", "mr", "mrs", "ms", "miss", "prof"}
 LOST_STAGES = {"Lost"}   # "Won" means the client did commit, so it is not a conflict
 
 # Every table that points at a client; merged clients' rows move to the survivor.
@@ -75,7 +78,8 @@ CREATE TABLE data_quality_flags (
     severity              TEXT,    -- low, medium, high
     required_entitlement  TEXT,    -- strictest entitlement of the flag's sources
     action                TEXT,    -- conflicts: what to clarify at the meeting (a talking point)
-    caveat                TEXT     -- conflicts: why the document statement is contradicted
+    caveat                TEXT,    -- conflicts: why the document statement is contradicted
+    uses                  TEXT     -- conflicts: the source the briefing uses (an evidence ID)
 );
 CREATE TABLE chunks (
     chunk_id              TEXT PRIMARY KEY,
@@ -95,15 +99,17 @@ CREATE TABLE chunks (
 
 
 def words_of(text: str) -> list[str]:
-    """Lower case, punctuation removed: 'Raj J. Patel' -> ['raj', 'j', 'patel']"""
-    return re.sub(r"[^\w\s]", " ", text.lower()).split()
+    """Lower case, punctuation and "and" removed, so "&" and "and" read the same:
+    'Raj J. Patel' -> ['raj', 'j', 'patel']; 'Harbor and Pine' and 'Harbor & Pine' -> ['harbor', 'pine']"""
+    return [w for w in re.sub(r"[^\w\s]", " ", text.lower()).split() if w != "and"]
 
 
 def is_legal_suffix(word: str) -> bool:
-    """'partners', and a misspelt long suffix ('prtners' scores 93; real words like 'painters' 75).
-    Short suffixes must be exact: a typo of 'inc' can't be told from a real word."""
+    """A legal suffix, abbreviated or in full ('Ltd' or 'Limited'), or a misspelt 'partners'
+    ('prtners' scores 93; real words like 'painters' 75). The others must be exact: a typo of
+    'inc' or 'limited' can't be told from a real word."""
     return word in LEGAL_SUFFIXES or (len(word) >= 6 and any(
-        fuzz.ratio(word, suffix) >= SUFFIX_TYPO_SCORE for suffix in LEGAL_SUFFIXES if len(suffix) >= 6))
+        fuzz.ratio(word, suffix) >= SUFFIX_TYPO_SCORE for suffix in TYPO_TOLERANT_SUFFIXES))
 
 
 def normalize(name: str) -> str:
@@ -115,10 +121,13 @@ def normalize(name: str) -> str:
 
 
 def same_person(a: str, b: str) -> bool:
-    """'Raj Patel' = 'RAJ  PATEL' = 'Raj J. Patel': case, spacing and middle initials don't matter.
-    'R. Patel' is not 'Raj Patel': a first name that is only an initial still needs confirming."""
+    """'Raj Patel' = 'RAJ  PATEL' = 'Raj J. Patel' = 'Dr. Raj Patel': case, spacing, middle initials
+    and a title in front don't matter. 'R. Patel' is not 'Raj Patel': a first name that is only an
+    initial still needs confirming."""
     def key(name: str) -> list[str]:
         words = words_of(name)
+        while words and words[0] in HONORIFICS:  # 'dr alan whitfield' -> 'alan whitfield'
+            words = words[1:]
         middle = [w for w in words[1:-1] if len(w) > 1]  # drops the 'j' in 'raj j patel'
         return words[:1] + middle + words[1:][-1:]       # first name, middle names, last name
     return key(a) == key(b)
@@ -135,13 +144,13 @@ def strictest(*entitlements: str) -> str:
 
 
 def add_flag(conn, client_id, flag_type, severity, title, detail, source_ids, entitlement="standard",
-             action=None, caveat=None) -> None:
+             action=None, caveat=None, uses=None) -> None:
     """Record one finding. Its title and detail are written for people: no IDs, human dates.
     The IDs a reader may want are in source_ids, shown as citation chips."""
     count = conn.execute("SELECT COUNT(*) FROM data_quality_flags").fetchone()[0]
-    conn.execute("INSERT INTO data_quality_flags VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    conn.execute("INSERT INTO data_quality_flags VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                  (f"F{count + 1:03d}", client_id, flag_type, title, detail, json.dumps(source_ids), severity,
-                  entitlement, action, caveat))
+                  entitlement, action, caveat, uses))
 
 # ---------------------------------------------------------------------------
 # Step 1: duplicate clients (T2)
@@ -221,8 +230,17 @@ class Resolver:
         if score >= RESOLVE_SCORE and len(candidates) == 1:
             return Resolution(next(iter(candidates)), "fuzzy", score)
         status = "review" if score >= REVIEW_SCORE else "unresolved"
-        best = min(candidates) if score >= MENTION_SCORE else None
+        best = min(candidates) if score >= REVIEW_SCORE else self.mentioned(key)
         return Resolution(None, status, score, best_match=best)
+
+    def mentioned(self, key: str) -> str | None:
+        """A weak match is shown on the closest client that shares a whole word with it. By letters,
+        'Arbor' is closer to 'Harbor & Pine' (62) than to 'Arbor Health' (59), but it means Arbor."""
+        sharing = sorted(name for name in self.names if set(key.split()) & set(name.split()))
+        if not sharing:
+            return None
+        match, score, _ = process.extractOne(key, sharing, scorer=fuzz.ratio)
+        return min(self.names[match]) if score >= MENTION_SCORE else None
 
     def find_in_text(self, text: str) -> Resolution:
         """4. No client_ref: look for known names and aliases as whole words in the text."""
@@ -376,7 +394,10 @@ def flag_overdue_actions(conn, today: dt.date) -> None:
 
 
 def flag_role_conflicts(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
-    """T5: a document names someone in a role that the contacts table gives to someone else."""
+    """T5: a document names someone in a role that the contacts table gives to someone else.
+    The newer of the two is used. When that is the document, the unified contact list follows it
+    (see replace_role_holder), unless the document is restricted: then the contact list everyone
+    sees keeps the record. Either way the flag asks the banker to confirm."""
     for doc in docs:
         client_id = doc_clients.get(doc.doc_id)
         for claim in doc.claims:
@@ -389,8 +410,14 @@ def flag_role_conflicts(conn, docs: list[Document], doc_clients: dict[str, str])
             role, said_by = claim["role"], doc_phrase(doc.doc_type, doc.date)  # e.g. "a June email"
             updated = month_of(contact["updated_at"])
             record_is_newer = contact["updated_at"] >= doc.date.isoformat()
-            using = (f"Using {contact['name']}, the newer record." if record_is_newer
-                     else f"Using {claim['name']}, the newer source.")
+            use_document = not record_is_newer and doc.required_entitlement == "standard"
+            if use_document:
+                using = f"Using {claim['name']}, the newer source."
+                replace_role_holder(conn, contact, claim["name"], doc)
+            elif record_is_newer:
+                using = f"Using {contact['name']}, the newer record."
+            else:
+                using = f"Using {contact['name']} until confirmed."
             add_flag(conn, client_id, "conflict", "high", f"Who is the {role}?",
                      f"{capitalize(said_by)} names {claim['name']}, but the contacts record (updated in {updated}) "
                      f"says {contact['name']}. {using} Confirm at the meeting.",
@@ -398,7 +425,17 @@ def flag_role_conflicts(conn, docs: list[Document], doc_clients: dict[str, str])
                      doc.required_entitlement,
                      action=f"Confirm who the {role} is (records say {contact['name']}; {said_by} says {claim['name']}).",
                      caveat=(f"the contacts record (updated in {updated}) says the {role} is {contact['name']}."
-                             if record_is_newer else None))
+                             if record_is_newer else None),
+                     uses=f"DOC:{doc.doc_id}" if use_document else f"SQL:contacts:{contact['contact_id']}")
+
+
+def replace_role_holder(conn, old, name: str, doc: Document) -> None:
+    """The document is newer than the contacts record: keep the old holder as 'Former <title>' and
+    add the new one, with an ID that says where it came from (e.g. CT201-email_201)."""
+    conn.execute("UPDATE contacts SET title = ? WHERE contact_id = ?", (f"Former {old['title']}", old["contact_id"]))
+    conn.execute("INSERT INTO contacts VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                 (f"{old['contact_id']}-{doc.doc_id}", old["client_id"], name, old["title"], old["relationship_role"],
+                  "", doc.date.isoformat(), doc.date.isoformat()))
 
 
 def flag_commitment_conflicts(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
@@ -424,7 +461,7 @@ def flag_commitment_conflicts(conn, docs: list[Document], doc_clients: dict[str,
                      strictest(doc.required_entitlement, opp["required_entitlement"]),
                      action=f"Ask about the {amount} {product} commitment, since the opportunity was "
                             f"marked {opp['stage']}.",
-                     caveat=f"the opportunity was {marked}.")
+                     caveat=f"the opportunity was {marked}.", uses=f"SQL:opportunities:{opp['opp_id']}")
 
 # ---------------------------------------------------------------------------
 # Step 6: approved sources (T11) and chunks

@@ -31,6 +31,31 @@ def test_normalize_strips_case_punctuation_and_legal_suffixes():
     assert unify.normalize("  HELIOS, Inc ") == "helios"
 
 
+def test_normalize_drops_a_misspelt_long_suffix_but_not_a_real_word():
+    assert unify.normalize("Northwind Capital Prtners") == "northwind capital"  # 93 vs "partners"
+    assert unify.normalize("Northwind Printers") == "northwind printers"        # 75: a real word
+    assert unify.normalize("Helios Ink") == "helios ink"                        # short suffixes must be exact
+    assert make_resolver().resolve("Northwind Capital Pratners").client_id == "C001"
+
+
+def test_legal_suffixes_in_full_and_and_or_ampersand():
+    assert unify.normalize("Kestrel Aviation Services Limited") == unify.normalize("Kestrel Aviation Services Ltd")
+    assert unify.normalize("Harbor and Pine Foods") == unify.normalize("Harbor & Pine Foods Inc") == "harbor pine foods"
+    assert unify.normalize("Data Unlimited") == "data unlimited"  # 88 like "limited", but a real word
+
+
+def test_same_person_ignores_case_spacing_and_middle_initials():
+    assert unify.same_person("Dr. Alan Whitfield", "Alan Whitfield")
+    assert unify.same_person("Raj Patel", "RAJ  PATEL") and unify.same_person("Raj Patel", "Raj J. Patel")
+    assert not unify.same_person("Raj Patel", "R. Patel")       # an initial for a first name: confirm it
+    assert not unify.same_person("Raj Patel", "Jordan Blake")
+
+
+def test_same_product_allows_extra_words_but_not_missing_ones():
+    assert unify.same_product("FX Hedging", "fx hedging") and unify.same_product("FX Hedging", "FX Hedging program")
+    assert not unify.same_product("FX Hedging", "Hedging") and not unify.same_product("FX Hedging", "Space Insurance")
+
+
 def test_resolve_by_id_follows_merges():
     r = make_resolver().resolve("C014")
     assert (r.client_id, r.method) == ("C001", "id")
@@ -52,6 +77,40 @@ def test_resolve_exact_alias():
 def test_fuzzy_thresholds(ref, client_id, method, best_match):
     r = make_resolver().resolve(ref)
     assert (r.client_id, r.method, r.best_match) == (client_id, method, best_match)
+
+
+def test_a_weak_match_is_only_mentioned_on_a_client_sharing_a_word():
+    resolver = unify.Resolver({"arbor health": {"C003"}, "harbor pine": {"C201"}}, {})
+    r = resolver.resolve("Arbor")  # by letters "harbor pine" is closer (62 vs 59)
+    assert (r.client_id, r.method, r.best_match) == (None, "unresolved", "C003")
+    assert resolver.resolve("Zebra").best_match is None
+
+
+def test_a_newer_document_replaces_the_role_holder_unless_it_is_restricted():
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    conn.executescript(load_structured.SCHEMA + unify.UNIFY_SCHEMA)
+    conn.execute("INSERT INTO contacts VALUES ('CT9', 'C9', 'Denise Albright', 'CFO', 'Decision maker', "
+                 "'denise@x.com', '2026-06-14', '2026-06-14')")
+
+    def october_email(doc_id: str, restricted: bool) -> Document:
+        return Document(doc_id=doc_id, doc_type="email", client_ref="C9", date=dt.date(2026, 10, 20), author="x",
+                        source="email", restricted=restricted, text="",
+                        required_entitlement="restricted_deals" if restricted else "standard",
+                        claims=[{"type": "contact_role", "role": "CFO", "name": "Priya Natarajan"}])
+
+    def contacts():
+        return {tuple(r) for r in conn.execute("SELECT contact_id, name, title FROM contacts")}
+
+    unify.flag_role_conflicts(conn, [october_email("email_8", restricted=True)], {"email_8": "C9"})
+    assert contacts() == {("CT9", "Denise Albright", "CFO")}  # a restricted source never changes the shared list
+    assert conn.execute("SELECT uses FROM data_quality_flags").fetchone()[0] == "SQL:contacts:CT9"
+
+    conn.execute("DELETE FROM data_quality_flags")
+    unify.flag_role_conflicts(conn, [october_email("email_9", restricted=False)], {"email_9": "C9"})
+    assert contacts() == {("CT9", "Denise Albright", "Former CFO"), ("CT9-email_9", "Priya Natarajan", "CFO")}
+    flag = conn.execute("SELECT detail, uses FROM data_quality_flags").fetchone()
+    assert "Using Priya Natarajan, the newer source" in flag["detail"] and flag["uses"] == "DOC:email_9"
 
 
 def test_find_in_text_matches_whole_names_only():

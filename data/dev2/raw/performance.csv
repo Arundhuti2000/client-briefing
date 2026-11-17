@@ -1,0 +1,5 @@
+client_id,product,metric,value,period,as_of
+C201,Payments,payment_volume_usd,342000000,2026Q3,2026-10-13
+C202,FX,fx_volume_usd,48000000,2026Q2,2026-07-15
+C201,Payments,payment_volume_usd,310000000,2026Q2,2026-07-14
+C202,FX,fx_volume_usd,61000000,2026Q3,2026-10-14

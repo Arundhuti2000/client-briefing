@@ -177,6 +177,17 @@ def get_client_profile(conn, user, req: ClientRequest) -> list[Fact]:
     return facts
 
 
+@tool(ClientRequest)
+def get_metric_history(conn, user, req: ClientRequest) -> list[Fact]:
+    """Every value of every metric series, oldest first, for trend lines on the Clients page.
+    (The metric tables hold no restricted rows.) Not offered to the LLM: the briefing uses get_metrics."""
+    client_id = require_client(conn, req.client_id)
+    return [Fact(evidence_id=row["evidence_id"], label=metric_label(row["source"], row["product"], row["metric"]),
+                 value=row["value"], as_of=row["as_of"], source=row["source"],
+                 details={"unit": row["unit"], "period": row["period"]})
+            for row in db.metric_rows(conn, client_id)]
+
+
 @tool(MetricsRequest)
 def get_metrics(conn, user, req: MetricsRequest) -> list[Fact]:
     """Latest value of every metric series, plus its value at `since` when it has changed.
@@ -261,7 +272,7 @@ def get_data_quality_flags(conn, user, req: ClientRequest) -> list[Fact]:
     return [Fact(evidence_id=f"FLAG:{f['flag_id']}", label=f["flag_type"], value=f["detail"], as_of=AS_OF_DATE,
                  source="data_quality_flags",
                  details={"title": f["title"], "severity": f["severity"], "source_ids": json.loads(f["source_ids"]),
-                          "action": f["action"], "caveat": f["caveat"]})
+                          "action": f["action"], "caveat": f["caveat"], "uses": f["uses"]})
             for f in db.flags(conn, client_id, user.entitlements)]
 
 @tool(SourceRequest)

@@ -1,5 +1,7 @@
 opp_id,client_name,product,stage,est_value_usd,owner,next_step,updated_at,restricted,required_entitlement
-OPP-COB-TF,Cobalt Ridge,Trade Finance,Proposal,380000,Maya Chen,Send term sheet for the receivables facility,2026-10-26 09:15:00,0,standard
-OPP-MER-VD,Meridian Biotherapeutics,Venture Debt,Negotiation,2900000,Priyanka Rao,Agree covenants for Project Lantern,2026-10-29 17:00:00,1,restricted_deals
-OPP-COB-CH,Cobalt Ridge Logistics,Commodity Hedging,lost,260000,Omar Haddad,None - the client hedged fuel with its broker,2026-10-15 13:30:00,0,standard
-OPP-MER-PM,Meridian Bio,Payments Modernization,Discovery,210000,Priyanka Rao,Map current payment flows with Amara Diallo,2026-10-21 10:10:00,0,standard
+OPP-VOS-RPF,Vossberg Antriebstechnik,Receivables Purchase Facility,Lost,520000,Henrik Lund,None - lost to a lower price from another bank,2026-10-23 08:50:00,0,standard
+OPP-LRS-RCF,Lattice Ridge Software,Revolving Credit Facility,discovery,240000,Kwame Mensah,Request recurring revenue cohort data,2026-11-06 11:00:00,0,standard
+OPP-LRS-SWP,LRS,Cash Sweep,Proposal,85000,Kwame Mensah,Finalise sweep thresholds with Marco Ruiz,2026-10-30 13:20:00,0,standard
+OPP-CHB-EQ,Cedar Hollow Building Supply,Equipment Finance,Proposal,140000,Kwame Mensah,Send the term sheet for 6 forklifts and 2 boom trucks,2026-11-10 09:45:00,0,standard
+OPP-VOS-MA,Vossberg Antriebstechnik GmbH,Sell-side M&A Advisory,Negotiation,6500000,Sofia Marchetti,Engagement letter for Project Lindwurm,2026-11-04 10:15:00,1,restricted_deals
+OPP-VOS-FX,Vossberg,FX Forwards,Proposal,310000,Henrik Lund,Send the EUR/USD hedging proposal to Jonas Weber,2026-11-02 16:30:00,0,standard

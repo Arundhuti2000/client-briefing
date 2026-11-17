@@ -20,8 +20,9 @@ Run from the repo root with the venv activated.
 
 | Command      | What it does                                           |
 | ------------ | ------------------------------------------------------ |
-| `make data`  | Write the raw source files to `data/raw/` (synthetic)  |
-| `make holdout` | Write the held-out dataset to `data/holdout/` (separate generator) |
+| `make data`  | Write all the data the app shows to `data/raw/`: dev, dev2 and held-out clients, red-team documents |
+| `make dev2`  | Write dev2 (held-out round 1, now development data) to `data/dev2/` |
+| `make holdout` | Write the held-out dataset (round 2) to `data/holdout/` |
 | `make load`  | Load the raw CSVs into `briefing.db` and clean them    |
 | `make unify` | Resolve aliases, dedupe, flag stale/conflicting data   |
 | `make briefing CLIENT=NWC USER_ID=u2` | Print one briefing as Markdown   |
@@ -43,7 +44,9 @@ make api       # terminal 1: http://localhost:8000 (API docs at /docs)
 make web       # terminal 2: http://localhost:5173
 ```
 
-Pick Sam or Alex, type a client (`NWC`, `Northwind Cap.`, `Helios`, `Arbor`), and press
+Pick a user (Alex Morgan, Nadia Rahman and Sofia Marchetti may see restricted deals; Sam Rivera,
+Daniel Osei and Kwame Mensah may not), type a client (`NWC`, `Helios`, `Arbor`, `HPF`,
+`Kestrel Aviation`, `Copperleaf`, `Vossberg`, `LRS`, `Cedar Hollow`), and press
 **Generate briefing**. Click any citation chip to open its source. Deep link (a demo backup):
 `http://localhost:5173/?user=u1&client=Helios`.
 
@@ -62,10 +65,17 @@ Instructions or off-topic questions are refused. API: `POST /briefings/{client_i
 
 `make eval` builds fresh copies of the data in temp folders (it never reads `data/`), then:
 
-1. **Scorecard** on the dev data (`eval/golden.yaml`) and on the **held-out** data
-   (`eval/holdout/golden.yaml`), side by side. The held-out set comes from a separate generator
-   (`data/generate_holdout.py`: different clients, people, wording and seed) and was never used
-   to tune the rules. Restricted leakage, injection and the red team are zero-tolerance: one
+1. **Scorecard** on three datasets, side by side:
+   - **dev** (`eval/golden.yaml`): Northwind, Helios, Arbor. The rules were built on it.
+   - **dev2** (`eval/dev2/golden.yaml`): Harbor & Pine, Kestrel Aviation, Copperleaf Dental.
+     It was held-out round 1: scored once (`eval/history/holdout_round1.json`), then used to fix
+     the four gaps it found, so it is now development data and a regression test.
+   - **holdout** (`eval/holdout/golden.yaml`): round 2, Vossberg, Lattice Ridge, Cedar Hollow.
+     Never used to change anything; its first result is in `eval/history/`.
+
+   Each held-out set plants the same kinds of trap as the dev data, in different forms, with
+   realistic emails, notes and news, plus controls that must not be flagged. See
+   [DECISIONS.md](DECISIONS.md) for every decision and the held-out history. Restricted leakage, injection and the red team are zero-tolerance: one
    failure exits non-zero. Cost per briefing (LLM requests, tokens, cache hits) is reported.
 2. **Quality metrics report** (`eval/quality.py`), dev | holdout:
    - Retrieval: Precision@5, Recall@5, MRR and nDCG@5 for BM25, vector and hybrid, with the

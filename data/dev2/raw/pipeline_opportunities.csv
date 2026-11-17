@@ -1,0 +1,8 @@
+opp_id,client_name,product,stage,est_value_usd,owner,next_step,updated_at,restricted,required_entitlement
+OPP-KAS-ACQ,Kestrel Aviation Services,Acquisition Financing,Negotiation,4800000,Oliver Grant,Credit committee paper for Project Merlin,2026-11-06 18:10:00,1,restricted_deals
+OPP-HPF-SCF,Harbor and Pine Foods,Supply Chain Finance,Proposal,450000,Chris Whitaker,Agree onboarding plan for the first 40 produce suppliers,2026-10-28 16:40:00,0,standard
+OPP-CLD-TL,Copperleaf Dental Partners,Term Loan,Discovery,260000,Daniel Osei,Collect 2025 audited accounts for the practice acquisition loan,2026-10-30 10:00:00,0,standard
+OPP-HPF-CC,HPF,Commercial Card,Won,120000,Daniel Osei,Issue cards to the remaining store managers,2026-08-19 09:30:00,0,standard
+OPP-HPF-MS,Harbor & Pine,Merchant Services,lost,210000,Chris Whitaker,None - the client renewed with its current card processor,2026-10-19 11:05:00,0,standard
+OPP-KAS-FX,Kestrel Aviation,FX Forwards,Negotiation,380000,Oliver Grant,Price a 12-month USD/GBP forward strip,2026-11-03 14:20:00,0,standard
+OPP-CLD-AP,Copperleaf Dental,Payables Automation,proposal,95000,Lena Fischer,Send two client references to Jenna Liu,2026-11-05 15:30:00,0,standard

@@ -1,0 +1,16 @@
+# Retrieval set for the dev2 dataset (formerly held-out round 1). Review and correct the labels by hand.
+- {client: C201, user: u2, question: "Who is Harbor & Pine's new CFO?", relevant: [email_201, news_202]}
+- {client: C201, user: u2, question: "How many stores are they opening in upstate New York?", relevant: [note_201, news_201]}
+- {client: C201, user: u2, question: "Why did they stay with their current card processor?", relevant: [email_202]}
+- {client: C201, user: u2, question: "When will we get the updated W-9?", relevant: [email_203]}
+- {client: C201, user: u2, question: "What revenue did the October account plan report?", relevant: [brief_201]}
+- {client: C201, user: u2, question: "Which suppliers would use supply chain finance?", relevant: [note_201, brief_201, research_201]}
+- {client: C201, user: u2, question: "How leveraged is Harbor & Pine?", relevant: [research_201]}
+- {client: C202, user: u2, question: "How much of their dollar purchases do they want to hedge?", relevant: [note_211]}
+- {client: C202, user: u2, question: "When does the second Stansted hangar open?", relevant: [note_211]}
+- {client: C202, user: u2, question: "When is the hangar site visit?", relevant: [email_211]}
+- {client: C202, user: u2, question: "What maintenance contract did Kestrel win?", relevant: [news_211]}
+- {client: C202, user: u1, question: "What is Project Merlin?", relevant: [note_212, research_212]}
+- {client: C202, user: u2, question: "What is Project Merlin?", relevant: []}
+- {client: C203, user: u2, question: "How many supplier invoices does Copperleaf process a month?", relevant: [note_221]}
+- {client: C203, user: u2, question: "Which references did Jenna Liu ask for?", relevant: [email_221]}

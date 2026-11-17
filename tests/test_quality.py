@@ -1,4 +1,4 @@
-"""Tests for eval/quality.py (the quality metrics report) and data/generate_holdout.py."""
+"""Tests for eval/quality.py (the quality metrics report) and the dev2 and held-out generators."""
 
 import json
 
@@ -8,7 +8,7 @@ import yaml
 from app import db, tools
 from app.orchestrator import build_briefing
 from app.validate import Bullet
-from data import generate_holdout
+from data import generate_dev2, generate_holdout
 from eval import quality, run_eval
 
 
@@ -44,9 +44,10 @@ def test_the_detectors_get_200_plus_perturbations_and_their_mistakes_are_listed(
     assert report["cases"] >= 200
     detectors = report["detectors"]
     assert detectors["Stale metrics"]["f1"] == 1.0 and detectors["Entity resolution"]["precision"] == 1.0
-    # Known limitations, listed rather than hidden (a regression marker if they ever change):
-    assert any("double space" in fp for fp in detectors["Role conflicts"]["false_positives"])
-    assert any("program" in fn for fn in detectors["Commitment conflicts"]["false_negatives"])
+    # Found by this report and fixed (double spaces and middle initials; "FX Hedging program");
+    # kept as regression checks
+    assert detectors["Role conflicts"]["false_positives"] == []
+    assert detectors["Commitment conflicts"]["false_negatives"] == []
 
 
 def test_the_router_report_has_a_confusion_table():
@@ -68,10 +69,14 @@ def test_faithfulness_counts_only_ai_written_claims(use_dev):
     assert (report["claims"], report["supported"]) == (2, 1) and "triple" in report["unsupported"][0]
 
 
-def test_the_holdout_dataset_is_separate(tmp_path):
-    generate_holdout.generate(tmp_path)
+@pytest.mark.parametrize("generator, others", [
+    (generate_dev2, ("Northwind", "Helios", "Arbor", "Raj Patel", "Vossberg", "Lattice Ridge")),
+    (generate_holdout, ("Northwind", "Helios", "Arbor", "Raj Patel", "Harbor & Pine", "Kestrel", "Copperleaf")),
+])
+def test_each_dataset_is_separate(tmp_path, generator, others):
+    generator.generate(tmp_path)
     traps = json.loads((tmp_path / "planted_traps.json").read_text(encoding="utf-8"))
     docs = list((tmp_path / "raw" / "docs").rglob("*.*"))
-    assert len(traps) == 12 and len(docs) == len(generate_holdout.DOCUMENTS)
+    assert len(traps) == 12 and len(docs) == len(generator.DOCUMENTS)
     text = " ".join(p.read_text(encoding="utf-8") for p in [*docs, *(tmp_path / "raw").glob("*.csv")])
-    assert not any(name in text for name in ("Northwind", "Helios", "Arbor", "Raj Patel"))  # no dev names
+    assert not any(name in text for name in others)  # no names from the other datasets

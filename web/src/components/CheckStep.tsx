@@ -1,7 +1,7 @@
 // Step 2, Check: for each conflict flag, the banker picks the source they trust. The choice
 // is the banker's note (kept in this browser and turned into a follow-up); the briefing
 // text itself always follows the records, as the validator checked it.
-import type { Briefing } from '../api'
+import type { Briefing, FlagRow } from '../api'
 import { dateTime, shortDate } from '../format'
 import type { Progress } from '../progress'
 import { conflictOptions, isRecord, statement } from '../workflow'
@@ -15,6 +15,18 @@ type Props = {
   saved: Record<string, string> // flag -> when the API saved the decision
   error: string | null
   onDecide: (flagId: string, sourceId: string) => void
+}
+
+// The side the briefing uses: the newer one, as unify decided (older reports: the record)
+const usedSource = (f: FlagRow) => f.uses ?? f.source_ids.find(isRecord)
+
+function optionNote(evidenceId: string, asOf: string, used: boolean): string {
+  if (isRecord(evidenceId)) {
+    return used
+      ? `Updated ${shortDate(asOf)}. The briefing uses this one.`
+      : `Updated ${shortDate(asOf)}. Older than the document, so the briefing uses the document.`
+  }
+  return used ? 'Newer than the record, so the briefing uses this one.' : 'The briefing marks this statement as contradicted.'
 }
 
 const GOOD_TO_KNOW: Record<string, [string, Tone]> = {
@@ -63,20 +75,17 @@ export function CheckStep({ briefing: b, progress, saved, error, onDecide }: Pro
               {conflictOptions(b, f).map((e) => {
                 const on = chosen === e.evidence_id
                 const id = `${f.flag_id}-${e.evidence_id}`
+                const used = e.evidence_id === usedSource(f)
                 return (
                   <label key={e.evidence_id} htmlFor={id} className={`option ${on ? 'is-on' : ''}`}>
                     <span className="option-top">
                       <RadioGroupItem value={e.evidence_id} id={id} />
                       <SourceIcon source={e.source} evidenceId={e.evidence_id} size={14} />
                       {isRecord(e.evidence_id) ? 'Bank record' : 'Document'}
-                      {isRecord(e.evidence_id) && <span className="suggested">Suggested</span>}
+                      {used && <span className="suggested">Suggested</span>}
                     </span>
                     <span className="option-value">{e.label}</span>
-                    <span className="option-meta">
-                      {isRecord(e.evidence_id)
-                        ? `Updated ${shortDate(e.as_of)}. The briefing uses this one.`
-                        : 'The briefing marks this statement as contradicted.'}
-                    </span>
+                    <span className="option-meta">{optionNote(e.evidence_id, e.as_of, used)}</span>
                     <span className="quote">{statement(b, e)}</span>
                   </label>
                 )

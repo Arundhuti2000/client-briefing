@@ -6,11 +6,9 @@ A question goes to exactly one route, decided the cheapest and most predictable 
   2. meaning: compare the question with example questions for each route, using the local
               embedding model (no API call; the same answer every time).
   3. llm:     only when both are unsure, one request down LLM_CHAIN that must answer with one
-              route name from the list. Anything else is ignored.
-  4. default: if no tier decided, a question that is not even loosely like any example
-              question (e.g. "What is the capital of France?") is out of scope; anything
-              else goes to document search (the safest default: it can only find what the
-              user may see, and its answer is checked by the validator).
+              route name from the list. Anything else is ignored, and if no model answers,
+              the question goes to document search (the safest default: it can only find
+              what the user may see, and its answer is checked by the validator).
 
 Routes about numbers and records are answered by code from SQL, never by the LLM; only
 document and news questions need the LLM, and their answers go through the validator.
@@ -90,7 +88,6 @@ BY_NAME = {r.name: r for r in ROUTES}
 FALLBACK = "documents"     # when nobody can tell: search only finds what the user may see
 MEANING_MIN = 0.45         # cosine similarity a meaning match needs...
 MEANING_MARGIN = 0.05      # ...and how far ahead of the next route it must be
-OFF_TOPIC_BELOW = 0.30     # the default: less similar than this to every example is out of scope
 
 
 @dataclass(frozen=True)
@@ -120,19 +117,15 @@ def example_vectors() -> tuple[list[str], np.ndarray]:
     return names, retrieval.encode([e for r in ROUTES for e in r.examples])
 
 
-def closest_routes(question: str) -> list[tuple[str, float]]:
-    """Each route with its best similarity to the question, closest first."""
+def meaning_match(question: str) -> Decision | None:
+    """Tier 2: the route whose example questions are closest in meaning, if it is clearly closest."""
     names, vectors = example_vectors()
     similarity = vectors @ retrieval.encode([question])[0]
     best_per_route = {}
     for name, score in zip(names, similarity):
         best_per_route[name] = max(best_per_route.get(name, -1.0), float(score))
-    return sorted(best_per_route.items(), key=lambda item: item[1], reverse=True)
-
-
-def meaning_match(question: str) -> Decision | None:
-    """Tier 2: the route whose example questions are closest in meaning, if it is clearly closest."""
-    (best, score), (_, second) = closest_routes(question)[:2]
+    ranked = sorted(best_per_route.items(), key=lambda item: item[1], reverse=True)
+    (best, score), (_, second) = ranked[0], ranked[1]
     if score >= MEANING_MIN and score - second >= MEANING_MARGIN:
         return Decision(BY_NAME[best], "meaning", f"closest to its examples ({score:.2f} vs {second:.2f})")
     return None
@@ -158,13 +151,9 @@ def llm_match(question: str) -> Decision | None:
 
 
 def route(question: str) -> Decision:
-    """The route for a question: rule, then meaning, then the LLM, then a default."""
+    """The route for a question: rule, then meaning, then the LLM, then document search."""
     for tier in (rule_match, meaning_match, llm_match):
         decision = tier(question)
         if decision is not None:
             return decision
-    _, closest = closest_routes(question)[0]
-    if closest < OFF_TOPIC_BELOW:
-        return Decision(BY_NAME["out_of_scope"], "default",
-                        f"not like any question about a client ({closest:.2f})")
     return Decision(BY_NAME[FALLBACK], "default", "no tier was sure; searching the documents")

@@ -5,3 +5,16 @@ OPP-NOR-CF,Northwind Capital Partners,Credit Facility Upsize,discovery,600000,Al
 OPP-HEL-MA,Helios Energy Group,M&A Advisory,Negotiation,4500000,Alex Morgan,Finalize engagement letter for Project Sunrise,2026-10-30 18:15:00,1,restricted_deals
 OPP-HEL-GB,Helios,Green Bond Issuance,proposal,1200000,Alex Morgan,Send indicative pricing by November 20,2026-10-05 11:00:00,0,standard
 OPP-ARB-CM,Arbor Health Systems,Cash Management,Discovery,250000,Taylor Brooks,Resolve ACH file rejections before expanding scope,2026-09-25 09:30:00,0,standard
+OPP-KAS-ACQ,Kestrel Aviation Services,Acquisition Financing,Negotiation,4800000,Oliver Grant,Credit committee paper for Project Merlin,2026-11-06 18:10:00,1,restricted_deals
+OPP-HPF-SCF,Harbor and Pine Foods,Supply Chain Finance,Proposal,450000,Chris Whitaker,Agree onboarding plan for the first 40 produce suppliers,2026-10-28 16:40:00,0,standard
+OPP-CLD-TL,Copperleaf Dental Partners,Term Loan,Discovery,260000,Daniel Osei,Collect 2025 audited accounts for the practice acquisition loan,2026-10-30 10:00:00,0,standard
+OPP-HPF-CC,HPF,Commercial Card,Won,120000,Daniel Osei,Issue cards to the remaining store managers,2026-08-19 09:30:00,0,standard
+OPP-HPF-MS,Harbor & Pine,Merchant Services,lost,210000,Chris Whitaker,None - the client renewed with its current card processor,2026-10-19 11:05:00,0,standard
+OPP-KAS-FX,Kestrel Aviation,FX Forwards,Negotiation,380000,Oliver Grant,Price a 12-month USD/GBP forward strip,2026-11-03 14:20:00,0,standard
+OPP-CLD-AP,Copperleaf Dental,Payables Automation,proposal,95000,Lena Fischer,Send two client references to Jenna Liu,2026-11-05 15:30:00,0,standard
+OPP-VOS-RPF,Vossberg Antriebstechnik,Receivables Purchase Facility,Lost,520000,Henrik Lund,None - lost to a lower price from another bank,2026-10-23 08:50:00,0,standard
+OPP-LRS-RCF,Lattice Ridge Software,Revolving Credit Facility,discovery,240000,Kwame Mensah,Request recurring revenue cohort data,2026-11-06 11:00:00,0,standard
+OPP-LRS-SWP,LRS,Cash Sweep,Proposal,85000,Kwame Mensah,Finalise sweep thresholds with Marco Ruiz,2026-10-30 13:20:00,0,standard
+OPP-CHB-EQ,Cedar Hollow Building Supply,Equipment Finance,Proposal,140000,Kwame Mensah,Send the term sheet for 6 forklifts and 2 boom trucks,2026-11-10 09:45:00,0,standard
+OPP-VOS-MA,Vossberg Antriebstechnik GmbH,Sell-side M&A Advisory,Negotiation,6500000,Sofia Marchetti,Engagement letter for Project Lindwurm,2026-11-04 10:15:00,1,restricted_deals
+OPP-VOS-FX,Vossberg,FX Forwards,Proposal,310000,Henrik Lund,Send the EUR/USD hedging proposal to Jonas Weber,2026-11-02 16:30:00,0,standard

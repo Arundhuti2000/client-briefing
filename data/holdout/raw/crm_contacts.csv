@@ -1,7 +1,11 @@
 contact_id,client_id,name,title,relationship_role,email,last_contact_date,updated_at
-CT101,C101,Grace Okoro,CFO,Decision maker,grace.okoro@cobaltridge.com,10/27/2026,09/10/2026
-CT103,C101,Tomas Silva,Treasurer,Day-to-day,Tomas.Silva@CobaltRidge.com,04/02/2026,04/02/2026
-CT110,C102,Viktor Lund,CFO,Decision maker,viktor.lund@meridianbio.com,10/06/2026,08/11/2026
-CT102,C101,Tomas Silva,Treasurer,Day-to-day,tomas.silva@cobaltridge.com,10/19/2026,10/19/2026
-CT111,C102,Amara Diallo,Head of Treasury,Day-to-day,amara.diallo@meridianbio.com,10/16/2026,10/16/2026
-CT104,C115,Hannah Weiss,COO,Influencer,hannah.weiss@cobaltridge.com,12/05/2023,12/05/2023
+CT318,C318,Helen Duarte,Office Manager,Day-to-day,helen.duarte@latticeridge.io,07/22/2026,06/01/2023
+CT313,C302,Bob Hartley,"VP, Finance",Decision maker,Robert.Hartley@LatticeRidge.io,02/11/2026,02/11/2026
+CT312,C302,Robert Hartley,VP Finance,Decision maker,robert.hartley@latticeridge.io,10/14/2026,10/14/2026
+CT320,C303,Paul Gagnon,Owner and CEO,Decision maker,paul.gagnon@cedarhollow.ca,10/21/2026,10/21/2026
+CT321,C303,Marie Tremblay,Controller,Day-to-day,marie.tremblay@cedarhollow.ca,11/09/2026,08/12/2026
+CT302,C301,Katrin Brandt,CFO,Decision maker,katrin.brandt@vossberg.de,11/02/2026,07/01/2026
+CT311,C302,Marco Ruiz,Treasurer,Day-to-day,marco.ruiz@latticeridge.io,10/14/2026,09/08/2026
+CT310,C302,Owen Fitzgerald,CEO,Decision maker,owen@latticeridge.io,10/14/2026,05/19/2026
+CT303,C301,Jonas Weber,Head of Treasury,Day-to-day,jonas.weber@vossberg.de,11/02/2026,11/02/2026
+CT301,C301,Dr. Matthias Keller,CEO,Decision maker,matthias.keller@vossberg.de,09/17/2026,03/02/2026

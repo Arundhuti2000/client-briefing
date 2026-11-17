@@ -15,6 +15,9 @@
   --line-soft: #f4f4f5; /* row dividers */
   --bg: #f7f7f8; /* page */
   --bg-muted: #f4f4f5; /* tracks, inactive fills */
+  --bg-sunken: #ededf0; /* segmented-control track */
+  --text-faint: #d4d4d8; /* empty cells */
+  --bar-muted: #a1a1aa; /* bars that aren't the one in use */
   --surface: #ffffff;
   --ink: #18181b; /* primary buttons, logo */
 
@@ -33,6 +36,7 @@
   --warn-panel: #fffbeb;
   --warn-ink: #78350f;
   --warn-ink-2: #451a03;
+  --warn-border: #fde68a;
 
   /* Green: good, done */
   --good: #15803d;
@@ -47,6 +51,7 @@
   --bad-dot: #ef4444;
   --bad-soft: #fee2e2;
   --bad-ink: #991b1b;
+  --bad-panel: #fef2f2;
 
   /* Shape */
   --radius-sm: 8px;

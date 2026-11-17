@@ -1,0 +1,6 @@
+action_id,client_id,description,owner,due_date,status,source_doc_id
+A-205,C203,Send the term loan document checklist to Jenna Liu,Daniel Osei,"Nov 25, 2026",Open,note_221
+A-202,C201,Send revised merchant services pricing,Chris Whitaker,"Oct 13, 2026",Done,email_202
+A-204,C219,Collect the updated W-9 after the entity name change,Daniel Osei,"Dec 4, 2026",OPEN,email_203
+A-201,C201,Send the supplier onboarding timeline to Marcus Bell,Daniel Osei,"Nov 6, 2026",Open,note_201
+A-203,C202,Confirm the site visit to the new Stansted hangar,Oliver Grant,"Nov 18, 2026",open,email_211

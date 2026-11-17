@@ -29,6 +29,17 @@ export type ClientSummary = {
   conflicts: string[] // titles of conflict flags: the banker decides these in Check
   heads_up: string[] // other flags that need attention (housekeeping left out)
   flags: FlagSummary[] // every flag this user may see, attention first (the Data health page)
+  metrics: MetricSeries[] // every metric over time, revenue first (the Clients page trend lines)
+}
+
+// One metric over time. Every number comes from SQL; `text` and `change` are formatted by the API
+export type MetricPoint = { period: string; value: number; text: string; as_of: string; evidence_id: string }
+export type MetricSeries = {
+  label: string // "Revenue", "Wallet share", "Operating deposits"
+  unit: 'usd' | 'pct'
+  points: MetricPoint[] // oldest first
+  change: string | null // latest vs the one before: "+$270K", "+0.7 pts"
+  stale: boolean // the latest value is older than the stale threshold
 }
 
 // The last `make eval` scorecard (GET /evaluations): counts and statuses, never failure text
@@ -36,7 +47,7 @@ export type EvalCheck = { name: string; measures: string; result: string; target
 export type EvalTrap = { trap_id: string; what: string; checks: string[]; status: 'PASS' | 'FAIL' | 'not checked' }
 export type EvalRun = {
   provider: string
-  dataset?: 'dev' | 'holdout'
+  dataset?: 'dev' | 'dev2' | 'holdout'
   cases: number
   models: string
   checks: EvalCheck[]
@@ -50,13 +61,14 @@ export type DetectorReport = {
   cases: number; precision: number; recall: number; f1: number; false_positives: string[]; false_negatives: string[]
 }
 export type QualityReport = {
-  retrieval: Record<string, RetrievalReport> // dev, holdout
+  retrieval: Record<string, RetrievalReport> // dev, dev2, holdout
   detectors: Record<string, { cases: number; detectors: Record<string, DetectorReport> }>
   router: { questions: number; accuracy: number; routes: string[]; confusion: number[][]; misroutes: string[] }
   faithfulness: Record<string, { claims: number; supported: number; faithfulness: number | null; llm_sections: number;
-    first_drafts_rejected: number; rejection_rate: number | null; unsupported: string[] }>
-  note: string[]
+    first_drafts_rejected: number; rejection_rate: number | null }> // unsupported claim texts stay in the terminal
+  note: EvalNote | string[] // string[]: reports written before the note had titles
 }
+export type EvalNote = { proves: string[]; not_proves: { title: string; detail: string }[] }
 export type EvalReport = { ran_at: string; runs: EvalRun[]; holdout_runs?: EvalRun[]; quality?: QualityReport }
 
 export type ResolveResponse = {
@@ -129,6 +141,7 @@ export type FlagRow = {
   detail: string
   source_ids: string[]
   evidence_id: string
+  uses: string | null // conflicts: the source the briefing uses (shown as "Suggested")
 }
 
 export type Evidence = {

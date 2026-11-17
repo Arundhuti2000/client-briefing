@@ -33,5 +33,104 @@
       "amount_usd": 500000000,
       "due": "2027-03-31"
     }
+  ],
+  "note_201": [
+    {
+      "type": "commitment",
+      "product": "Merchant Services program",
+      "amount_usd": 500000000,
+      "due": "2027-03-31"
+    },
+    {
+      "type": "commitment",
+      "product": "Commercial Card",
+      "amount_usd": 6000000,
+      "due": "2026-12-31"
+    },
+    {
+      "type": "contact_role",
+      "role": "Treasurer",
+      "name": "Marcus T. Bell"
+    }
+  ],
+  "email_201": [
+    {
+      "type": "contact_role",
+      "role": "CFO",
+      "name": "Priya Natarajan"
+    }
+  ],
+  "brief_201": [
+    {
+      "type": "metric",
+      "metric": "revenue_usd",
+      "value": 2310000
+    }
+  ],
+  "note_211": [
+    {
+      "type": "metric",
+      "metric": "revenue_usd",
+      "value": 3180000
+    },
+    {
+      "type": "contact_role",
+      "role": "CFO",
+      "name": "Fiona Gallagher"
+    }
+  ],
+  "note_221": [
+    {
+      "type": "contact_role",
+      "role": "CEO",
+      "name": "Dr. Alan Whitfield"
+    }
+  ],
+  "note_301": [
+    {
+      "type": "commitment",
+      "product": "Receivables Purchase Facility",
+      "amount_usd": 43000000,
+      "due": "2027-01-31"
+    },
+    {
+      "type": "contact_role",
+      "role": "CEO",
+      "name": "Matthias Keller"
+    }
+  ],
+  "email_301": [
+    {
+      "type": "metric",
+      "metric": "revenue_usd",
+      "value": 2900000
+    }
+  ],
+  "email_311": [
+    {
+      "type": "contact_role",
+      "role": "Treasurer",
+      "name": "Anika Shah"
+    }
+  ],
+  "note_311": [
+    {
+      "type": "commitment",
+      "product": "Cash Sweep",
+      "amount_usd": 60000000,
+      "due": "2026-12-31"
+    },
+    {
+      "type": "contact_role",
+      "role": "VP Finance",
+      "name": "Bob Hartley"
+    }
+  ],
+  "note_321": [
+    {
+      "type": "contact_role",
+      "role": "Controller",
+      "name": "Marie Tremblay"
+    }
   ]
 }

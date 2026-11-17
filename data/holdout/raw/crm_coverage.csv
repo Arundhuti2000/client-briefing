@@ -1,6 +1,7 @@
 client_id,banker_name,coverage_role,since
-C101,Maya Chen,primary,2021-03-01
-C102,Leo Park,secondary,2025-02-01
-C101,Omar Haddad,product,2023-09-15
-C101,Leo Park,secondary,2025-02-01
-C102,Priyanka Rao,primary,2022-07-11
+C302,Kwame Mensah,primary,2024-03-11
+C303,Kwame Mensah,primary,2025-01-20
+C301,Sofia Marchetti,primary,2018-06-01
+C302,Sofia Marchetti,secondary,2024-03-11
+C301,Kwame Mensah,secondary,2025-09-01
+C301,Henrik Lund,product,2022-02-14

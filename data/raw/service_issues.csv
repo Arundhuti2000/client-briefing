@@ -3,3 +3,8 @@ SI-001,C003,ACH payment files rejected after September file format change,HIGH,O
 SI-002,C001,Custody statements delivered late,low,closed,02/06/2026,20/06/2026
 SI-003,C003,Duplicate wire fees charged,Medium,Closed,10/05/2026,30/05/2026
 SI-004,C002,Supplier payments missing same-day cut-off,medium,open,12/10/2026,
+SI-201,C201,Store deposit reconciliation file missing 3 locations,Medium,Open,27/10/2026,
+SI-203,C203,Card terminal settlement delayed by one day,Low,Closed,14/08/2026,19/08/2026
+SI-202,C202,USD payment confirmations arriving a day late,HIGH,OPEN,02/11/2026,
+SI-301,C301,EUR payments to Mexican suppliers rejected for a missing purpose code,High,Open,03/11/2026,
+SI-302,C302,Cash sweep ran twice on 31 October,Medium,Closed,31/10/2026,04/11/2026

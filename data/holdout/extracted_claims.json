@@ -1,31 +1,49 @@
 {
-  "brief_101": [
+  "note_301": [
+    {
+      "type": "commitment",
+      "product": "Receivables Purchase Facility",
+      "amount_usd": 43000000,
+      "due": "2027-01-31"
+    },
+    {
+      "type": "contact_role",
+      "role": "CEO",
+      "name": "Matthias Keller"
+    }
+  ],
+  "email_301": [
     {
       "type": "metric",
       "metric": "revenue_usd",
-      "value": 2100000
+      "value": 2900000
     }
   ],
-  "email_101": [
+  "email_311": [
     {
       "type": "contact_role",
-      "role": "CFO",
-      "name": "Nina Brooks"
+      "role": "Treasurer",
+      "name": "Anika Shah"
     }
   ],
-  "note_101": [
+  "note_311": [
     {
       "type": "commitment",
-      "product": "Commodity Hedging",
-      "amount_usd": 30000000,
-      "due": "2027-03-31"
-    }
-  ],
-  "note_104": [
+      "product": "Cash Sweep",
+      "amount_usd": 60000000,
+      "due": "2026-12-31"
+    },
     {
       "type": "contact_role",
-      "role": "CFO",
-      "name": "Viktor Lund"
+      "role": "VP Finance",
+      "name": "Bob Hartley"
+    }
+  ],
+  "note_321": [
+    {
+      "type": "contact_role",
+      "role": "Controller",
+      "name": "Marie Tremblay"
     }
   ]
 }

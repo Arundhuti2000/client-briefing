@@ -137,6 +137,16 @@ def test_clients_include_every_flag_the_user_may_see_attention_first():
     assert northwind["flags"][0]["title"] in ("Who is the CFO?", "Is the FX hedging deal still live?")
 
 
+def test_clients_carry_metric_trends_formatted_by_code():
+    northwind = next(r for r in api.get("/clients", headers=SAM).json() if r["client_id"] == "C001")
+    revenue = northwind["metrics"][0]
+    assert revenue["label"] == "Revenue" and northwind["metrics"][1]["label"] == "Wallet share"  # revenue first
+    assert [p["period"] for p in revenue["points"]][-1] == "Q3 2026" and revenue["points"][-1]["text"] == "$5.1M"
+    assert revenue["change"].startswith("+$") and revenue["stale"] is False
+    dates = [p["as_of"] for p in revenue["points"]]
+    assert dates == sorted(dates) and len(dates) > 1  # oldest first, for the trend line
+
+
 def test_evaluations_serves_only_the_saved_counts(tmp_path, monkeypatch):
     from eval import run_eval
     monkeypatch.setattr(run_eval, "REPORT_PATH", tmp_path / "last_run.json")

@@ -1,3 +1,7 @@
 user_id,name,role,entitlements
 u1,Alex Morgan,Senior coverage banker,standard;restricted_deals
 u2,Sam Rivera,Analyst,standard
+u3,Nadia Rahman,Coverage director,standard;restricted_deals
+u4,Daniel Osei,Analyst,standard
+u5,Sofia Marchetti,Managing director,standard;restricted_deals
+u6,Kwame Mensah,Associate,standard
