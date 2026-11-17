@@ -448,7 +448,11 @@ For the full design see [SPEC.md](SPEC.md); for commands see [README.md](README.
 - Also: a replayed answer already passed the validator once, so a replay can't measure how often first drafts fail. The reported faithfulness run therefore used fresh requests (with the cap), and the README says which briefings were replayed.
 
 **D81. Reported numbers are generated, never typed.**
-- `make results` writes the README's results section from `eval/last_run.json` and `eval/history/` (the held-out first runs and the last real-model run, `eval_real.json`, which later template runs don't overwrite).
+- `make results` writes the README's results section from `eval/last_run.json` and `eval/history/` (the held-out first runs and the last real-model run, `eval_real.json`, which later template runs don't overwrite). It also writes PRESENTATION.md's Key numbers; `make eval-break` keeps its scorecard in `eval/history/eval_break.json` for this.
+
+**D82. The demo is checked before it is given (2026-11-17).**
+- `make demo-check` replays the demo's paths (three briefings, three follow-up questions) with `CACHE_REPLAY=any` and a request budget of 0, so a cache miss shows as FAIL instead of spending a request or falling back to the template mid-demo.
+- `tests/test_e2e.py` walks the banker workflow through the API (resolve, briefing, sharing blocked, decisions, share, follow-up, cited source) and checks every surface Sam can reach for the restricted Helios records; text Sam typed himself doesn't count as a leak, and his probes must be answered exactly like a missing record.
 
 ---
 
