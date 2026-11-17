@@ -147,6 +147,25 @@ export type Briefing = {
   markdown: string
 }
 
+// A follow-up question's answer (POST /briefings/{client_id}/ask, the Answer model in app/ask.py)
+export type Answer = {
+  question: string
+  client_id: string
+  route: string // metrics, people, pipeline, actions, data_quality, documents, news, out_of_scope
+  method: 'rule' | 'meaning' | 'llm' | 'default' // how the route was chosen
+  reason: string
+  status: 'answered' | 'couldnt_summarize' | 'refused'
+  answered_by: 'code' | 'ai' | 'evidence' | 'nobody'
+  provider: string | null
+  model: string | null
+  tools_called: string[]
+  llm_steps: number
+  bullets: Bullet[]
+  note: string | null
+  evidence: Record<string, Evidence>
+  check: Check
+}
+
 // What a citation chip opens (the Fact model in app/tools.py)
 export type Source = {
   evidence_id: string
@@ -223,6 +242,12 @@ export const createBriefing = (userId: string, clientId: string, meetingDate: st
   request<Briefing>('/briefings', userId, {
     method: 'POST',
     body: JSON.stringify({ client_id: clientId, meeting_date: meetingDate }),
+  })
+
+export const askFollowUp = (userId: string, clientId: string, question: string) =>
+  request<Answer>(`/briefings/${encodeURIComponent(clientId)}/ask`, userId, {
+    method: 'POST',
+    body: JSON.stringify({ question }),
   })
 
 export const getSource = (userId: string, evidenceId: string) =>

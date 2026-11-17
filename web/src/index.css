@@ -285,6 +285,18 @@
 .agenda li { display: flex; gap: 10px; align-items: baseline; padding: 9px 0; border-top: 1px solid var(--line-soft); font-size: 14px; line-height: 1.45; }
 .agenda .mono { font-size: 12px; color: var(--text-3); }
 
+/* Ask a follow-up */
+.ask-form { display: flex; gap: 8px; }
+.ask-input {
+  flex: 1 1 auto; min-width: 0; min-height: 40px; padding: 0 12px; font: inherit; font-size: 14px; color: var(--text);
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md);
+}
+.ask-input:focus-visible { outline: 2px solid var(--indigo); outline-offset: 1px; }
+.answer { display: flex; flex-direction: column; gap: 8px; padding-top: 14px; border-top: 1px solid var(--line-soft); }
+.answer-q { font-size: 15px; font-weight: 600; }
+.answer-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; font-size: 12px; color: var(--text-3); }
+.answer-meta strong { color: var(--text-strong); font-weight: 600; }
+
 /* Share */
 .banner-ok { display: flex; gap: 14px; align-items: center; padding: 18px 22px; border-radius: var(--radius-xl); background: var(--good-panel); border: 1px solid var(--good-border); color: var(--good-ink); }
 .banner-ok .h3 { color: var(--good-ink); }

@@ -14,9 +14,9 @@ from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
-from app import audit, db, orchestrator, retrieval, tools
+from app import ask, audit, db, orchestrator, retrieval, tools
 from app.orchestrator import Briefing, BriefingError
 from app.tasks import Task, TaskError, TaskRequest, create_task
 from app.tools import ClientId, Fact, UserContext
@@ -63,6 +63,11 @@ class ResolveResponse(BaseModel):
 class BriefingRequest(BaseModel):
     client_id: ClientId
     meeting_date: dt.date | None = None
+
+
+class AskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    question: str = Field(min_length=1, max_length=500)
 
 
 class BriefingResponse(Briefing):
@@ -186,6 +191,20 @@ def create_briefing(body: BriefingRequest, user: CurrentUser):
     except BriefingError as e:
         raise HTTPException(status_code=404, detail=f"Client not found ({e}).")
     return BriefingResponse(**briefing.model_dump(), markdown=orchestrator.to_markdown(briefing))
+
+
+@app.post("/briefings/{client_id}/ask", response_model=ask.Answer)
+def ask_follow_up(client_id: str, body: AskRequest, user: CurrentUser):
+    """A follow-up question about one client: routed, answered by code or by a bounded
+    tool-calling loop, checked by the validator, and audited step by step."""
+    with closing(db.connect()) as conn:
+        canonical = db.canonical_client_id(conn, client_id)
+    if canonical is None:
+        raise HTTPException(status_code=404, detail="Client not found.")
+    question = body.question.strip()
+    if not question:
+        raise HTTPException(status_code=422, detail="Type a question.")
+    return ask.answer(user, canonical, question)
 
 
 @app.get("/sources/{evidence_id:path}", response_model=Fact)

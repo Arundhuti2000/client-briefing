@@ -47,6 +47,14 @@ Pick Sam or Alex, type a client (`NWC`, `Northwind Cap.`, `Helios`, `Arbor`), an
 For UI work without spending requests, start the API with the template only:
 `$env:LLM_CHAIN="mock"; make api` (PowerShell).
 
+## Ask a follow-up
+
+In a briefing's Read step, type a question ("Who is the CFO?", "What did Raj Patel say about FX
+hedging?"). The router sends it to one route: numbers and records are answered by code from SQL,
+documents and news by a short tool-calling loop (at most 3 AI steps) whose answer must pass the
+validator. Under each answer you see the route, how it was chosen, the tools called and who wrote it.
+Instructions or off-topic questions are refused. API: `POST /briefings/{client_id}/ask`.
+
 ## LLM providers
 
 `LLM_CHAIN` in `.env` lists the providers to try, in order (default `gemini,openrouter,ollama,mock`):

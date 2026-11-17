@@ -2,12 +2,13 @@
 // written by the AI or the template are shown as they passed the validator.
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ActionRow, Briefing } from '../api'
+import type { ActionRow, Answer, Briefing, Evidence } from '../api'
 import { numberSources, sectionOf } from '../cite'
 import type { Cite } from '../cite'
 import { count, dayMonth, daysBetween, shortDate } from '../format'
 import type { Progress } from '../progress'
 import { conflictOptions } from '../workflow'
+import { AskPanel } from './AskPanel'
 import { SourcePanel } from './SourcePanel'
 import { AuthorTag, BulletList, BulletText, CiteChips, SectionNotes, SourceIcon, StatusText, Tag } from './common'
 import { Button } from '@/components/ui/button'
@@ -70,12 +71,22 @@ function summary(b: Briefing): ReactNode[] {
 }
 
 export function ReadStep({ briefing: b, userId, progress }: Props) {
-  const numbers = useMemo(() => numberSources(b), [b])
+  const [answers, setAnswers] = useState<Answer[]>([]) // follow-up answers, newest first
+  // Chips number the briefing's sources first, then any new ones the answers cite
+  const numbers = useMemo(() => {
+    const map = numberSources(b)
+    for (const id of answers.flatMap((a) => a.bullets.flatMap((x) => x.citations))) if (!map.has(id)) map.set(id, map.size + 1)
+    return map
+  }, [b, answers])
+  const evidence: Record<string, Evidence> = useMemo(
+    () => Object.assign({}, ...answers.map((a) => a.evidence), b.evidence),
+    [b, answers],
+  )
   const [selected, setSelected] = useState<string | null>(null)
   const [agendaEdits, setAgendaEdits] = useState<Record<string, boolean>>({}) // opportunity -> on/off agenda
   const cite: Cite = {
     number: (id) => numbers.get(id) ?? 0,
-    describe: (id) => ({ label: b.evidence[id]?.label ?? 'Source', source: b.evidence[id]?.source ?? null }),
+    describe: (id) => ({ label: evidence[id]?.label ?? 'Source', source: evidence[id]?.source ?? null }),
     selected,
     select: setSelected,
   }
@@ -103,6 +114,14 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
   ]
 
   return (
+    <>
+    <AskPanel
+      briefing={b}
+      userId={userId}
+      answers={answers}
+      onAnswer={(a) => setAnswers((all) => [a, ...all])}
+      cite={cite}
+    />
     <div className="read">
       <nav className="toc" aria-label="Briefing contents">
         <span className="small muted" style={{ padding: '0 10px 8px' }}>
@@ -368,7 +387,7 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
       </article>
 
       <aside className="read-aside" aria-label="Source and agenda">
-        <SourcePanel key={selected ?? 'none'} briefing={b} userId={userId} evidenceId={selected} number={selected ? cite.number(selected) : 0} />
+        <SourcePanel key={selected ?? 'none'} briefing={{ ...b, evidence }} userId={userId} evidenceId={selected} number={selected ? cite.number(selected) : 0} />
         <section className="panel panel-pad" aria-labelledby="h-agenda">
           <div className="panel-head">
             <h3 id="h-agenda" className="h3">
@@ -392,5 +411,6 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
         </section>
       </aside>
     </div>
+    </>
   )
 }
