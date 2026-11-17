@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Check, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { ApiError, getEvaluations } from '../api'
-import type { EvalCheck, EvalNote, EvalReport, EvalRun, JudgeHistory, QualityReport, RetrievalReport } from '../api'
+import type { EvalCheck, EvalNote, EvalReport, EvalRun, JudgeHistory, QualityReport, RealRun, RetrievalReport } from '../api'
 import { dateTime, errorMessage } from '../format'
 import type { Tone } from './common'
 
@@ -45,6 +45,15 @@ const METRICS = [
 const sum = (ns: number[]) => ns.reduce((a, b) => a + b, 0)
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`
 const pct = (n: number) => `${Math.round(n * 100)}%`
+
+// "openrouter: nvidia/nemotron-3.5-super-vl:free" -> "nemotron-3.5-super-vl (OpenRouter, free)"
+const PROVIDERS: Record<string, string> = { gemini: 'Gemini', openrouter: 'OpenRouter', ollama: 'Ollama' }
+function modelName(id: string) {
+  const [provider, model] = id.includes(': ') ? id.split(': ', 2) : ['', id]
+  const name = model.replace(/^[\w.-]+\//, '').replace(/:free$/, '')
+  const where = [PROVIDERS[provider], model.endsWith(':free') ? 'free' : ''].filter(Boolean).join(', ')
+  return where ? `${name} (${where})` : name
+}
 const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
 const measured = (c: EvalCheck) => capitalize(c.measures.replaceAll('_', '-')) // "must_include facts" -> "Must-include facts"
 const toneOf = (score: number): Tone => (score >= 0.95 ? 'good' : score >= 0.8 ? 'warn' : 'bad')
@@ -401,7 +410,7 @@ function Detectors({ report, note }: { report?: QualityReport['detectors'][strin
   )
 }
 
-function RouterAndAI({ q, judge }: { q: QualityReport; judge?: JudgeHistory }) {
+function RouterAndAI({ q, judge, real }: { q: QualityReport; judge?: JudgeHistory; real?: RealRun }) {
   const r = q.router
   const right = sum(r.confusion.map((row, i) => row[i] ?? 0))
   const route = (name: string) => name.replaceAll('_', ' ')
@@ -494,14 +503,27 @@ function RouterAndAI({ q, judge }: { q: QualityReport; judge?: JudgeHistory }) {
             </span>
           </div>
         ))}
-        {template.length > 0 && (
-          <div className="stack">
-            <span className="strong">{template.map(([key]) => runName(key)).join(' and ')}</span>
-            <span className="note">
-              No AI-written text in {template.length === 1 ? 'this run' : 'these runs'}. Use{' '}
-              <code className="code">make eval-real</code> to score them with a model.
-            </span>
-          </div>
+        {scored.length === 0 &&
+          real?.faithfulness.map((f, i) => (
+            <div key={i} className="faith-card">
+              <span className="faith-kicker">Dev · last real-model run ({real.ran_at.slice(0, 10)})</span>
+              <span className="faith-num mono">
+                {f.supported}
+                <small>/{f.claims}</small>
+              </span>
+              <span className="note">claims supported by their sources ({pct(f.faithfulness ?? 0)})</span>
+              <Bar value={f.faithfulness ?? 0} tone="indigo" />
+              <span className="small muted">
+                Written by {[...new Set(real.models[i].replace(/ \(cached\)| x\d+/g, '').split(', '))].join(', ')}. First drafts rejected by the validator: {f.first_drafts_rejected} of{' '}
+                {f.llm_sections}
+              </span>
+            </div>
+          ))}
+        {template.length > 0 && scored.length === 0 && !real && (
+          <span className="note">
+            The latest run used the template, which writes no AI text. Run <code className="code">make eval-real</code> to
+            score a model.
+          </span>
         )}
         <div className="faith-card">
           <span className="faith-kicker">AI judge (second opinion)</span>
@@ -517,7 +539,7 @@ function RouterAndAI({ q, judge }: { q: QualityReport; judge?: JudgeHistory }) {
               </span>
               <Bar value={judge.claims ? (judge.verdicts.supported ?? 0) / judge.claims : 0} tone="indigo" />
               <span className="small muted">
-                Judged by {judge.judges.join(', ')}; written by {judge.writers.join(', ')}.
+                Judged by {judge.judges.map(modelName).join(', ')}; written by {judge.writers.map(modelName).join(', ')}.
                 {judge.agreement_with_overlap !== null &&
                   ` Agrees with the word-overlap check on ${pct(judge.agreement_with_overlap)} of claims.`}
                 {judge.self_judged && ' The judge is the same model as the writer.'}
@@ -678,7 +700,7 @@ export function EvaluationsPage({ userId }: { userId: string }) {
             {tab === 'traps' && <Traps views={views} />}
             {tab === 'retrieval' && (q ? <Retrieval report={q.retrieval[view.data]} /> : needsQuality)}
             {tab === 'detectors' && (q ? <Detectors report={q.detectors[view.data]} note={note} /> : needsQuality)}
-            {tab === 'router' && (q ? <RouterAndAI q={q} judge={report.judge} /> : needsQuality)}
+            {tab === 'router' && (q ? <RouterAndAI q={q} judge={report.judge} real={report.real} /> : needsQuality)}
             {tab === 'proves' && (note ? <Proves note={note} /> : needsQuality)}
           </div>
         </>

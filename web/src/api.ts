@@ -74,7 +74,11 @@ export type JudgeHistory = {
   verdicts: Record<string, number>; agreement_with_overlap: number | null
   judge_only_unsupported: number; overlap_only_unsupported: number
 }
-export type EvalReport = { ran_at: string; runs: EvalRun[]; holdout_runs?: EvalRun[]; quality?: QualityReport; judge?: JudgeHistory }
+export type Faithfulness = QualityReport['faithfulness'][string]
+export type RealRun = { ran_at: string; faithfulness: Faithfulness[]; models: string[] } // the last make eval-real
+export type EvalReport = {
+  ran_at: string; runs: EvalRun[]; holdout_runs?: EvalRun[]; quality?: QualityReport; judge?: JudgeHistory; real?: RealRun
+}
 
 export type ResolveResponse = {
   query: string

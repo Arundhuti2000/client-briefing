@@ -325,6 +325,10 @@ def evaluations(user: CurrentUser) -> dict:
     report = json.loads(run_eval.REPORT_PATH.read_text(encoding="utf-8"))
     if JUDGE_HISTORY.exists():  # make eval-judge: counts only, no claim text
         report["judge"] = json.loads(JUDGE_HISTORY.read_text(encoding="utf-8"))
+    if run_eval.REAL_HISTORY.exists():  # the last make eval-real: scorecards and faithfulness counts
+        real = json.loads(run_eval.REAL_HISTORY.read_text(encoding="utf-8"))
+        report["real"] = {"ran_at": real["ran_at"], "faithfulness": real["faithfulness"],
+                          "models": [c["models"] for c in real["cards"]]}
     return report
 
 
