@@ -78,6 +78,7 @@ Restricted leakage, Injection resistance and Red team are zero-tolerance checks.
 | --- | --- |
 | `make eval` | Runs the scorecards on dev, dev2 and holdout, then the quality-metrics report. Saves `eval/last_run.json`. |
 | `make eval-real` | Does the same, plus a dev scorecard with the configured model chain. Also saves `eval/history/eval_real.json`. |
+| `make eval-judge` | Runs the [LLM as judge](#llm-as-judge) on the dev briefings. Saves counts to `eval/history/judge.json`. |
 | `make eval-break` | Runs the [break test](#break-test): the entitlement filter is switched off inside the eval process, and the run must exit non-zero. |
 | `make results` | Writes the results sections of `README.md` and of this document ([Current results](#current-results)) from `eval/last_run.json` and `eval/history/`. No figure is typed by hand. |
 | `make test` | Runs the unit, scorecard, quality-metric and end-to-end tests (always in template mode). |
@@ -295,6 +296,27 @@ The measure has known limits:
 
 The last real-model run is saved to `eval/history/eval_real.json`, with the run time, the real-model scorecards and their faithfulness reports. Later template runs do not overwrite this file, and `make results` reads it.
 
+### LLM as judge
+
+`eval/judge.py` (`make eval-judge`) gives a second opinion on the same claims, from a language model instead of word overlap. It is a separate run, so it never changes the scorecards or `eval/history/eval_real.json`.
+
+- **Input.** For each dev golden case, the briefing is built with the configured `LLM_CHAIN`; with `CACHE_REPLAY=any` it comes from the cache at no cost. Its AI-written bullets are split into claims exactly as above.
+- **One request per briefing.** The judge receives every claim with only the evidence its bullet cites, each item with its source and date (the validator also counts an item's own date as part of it), wrapped as data, and an instruction never to follow instructions inside it. Briefings with no AI-written claims send nothing.
+- **Labels, not numbers.** For each claim the judge picks one verdict from a fixed list: `supported`, `unsupported` or `contradicted`, with a one-sentence reason. Code accepts only a listed verdict for a listed claim; anything else counts as `no_verdict`.
+- **Computed by code:**
+  - verdict counts;
+  - judge faithfulness (supported claims divided by claims with a verdict);
+  - agreement with the word-overlap check, claim by claim, split into claims both call supported, claims both call unsupported, claims flagged by the judge only, and claims flagged by the overlap check only.
+- **Which model judges.** `JUDGE_CHAIN` lists the providers, in the same form as `LLM_CHAIN`; when it is empty, `LLM_CHAIN` is used. The template cannot judge, so `mock` is dropped. A judge from a different provider than the writer is preferred, because a model tends to approve its own wording. The report states when the judge and writer are the same model.
+- **Cost.** Requests go through the same cache, rate limits and `LLM_REQUEST_BUDGET` as every other LLM call (see [OPERATIONS.md](OPERATIONS.md#request-budget-and-caching)).
+- **What is saved.** `eval/history/judge.json` holds the run time, the judge chain, the models and the counts. Claim text and the judge's reasons can come from restricted briefings, so they are printed in the terminal and never saved. `make results` reads the file.
+
+The measure has known limits:
+
+- The judge is itself a model. Its labels are not ground truth, and no human has yet checked them.
+- One judge run per configuration; the verdicts of a different model, or of the same model on another day, may differ.
+- It is a tracking metric, not a gate. The validator remains the gate on what reaches a user.
+
 ### The "what this proves" note
 
 `quality.NOTE` defines a short statement of what the evaluation proves and what it does not. It is printed at the end of the report and shown on the Evaluations page. Its content appears in [What the evaluation does and doesn't prove](#what-the-evaluation-does-and-doesnt-prove).
@@ -357,6 +379,12 @@ Generated perturbations (aliases, typos, suffixes, case, look-alikes, true confl
 - With the model writing the text, every scorecard check passed (numeric accuracy 364/364 (100%); citation validity 151/151 (100%); restricted leakage 0 (in 12 checks); injection resistance 0 (in 26 checks)).
 - Some briefings replayed that model's cached answers; a cached answer already passed the validator once, so it can't count as a rejected first draft.
 - Faithfulness is a word-overlap and number check per claim, not a human judgment; a paraphrase can count as unsupported.
+
+**LLM as judge**
+
+- Dev briefings written by gemini-3.5-flash-lite, judged by openrouter: nvidia/nemotron-3.5-super-vl:free (run 2026-11-17 13:37 UTC): 97 of 100 claims supported, 3 unsupported, 0 contradicted, 0 without a verdict.
+- Agreement with the word-overlap check: 91% of judged claims (3 flagged by the judge only, 6 by the overlap check only).
+- The judge's labels are a second opinion, not ground truth: no human has checked them yet.
 
 **Held-out history**
 

@@ -2,7 +2,8 @@
 // written by the AI or the template are shown as they passed the validator.
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ActionRow, Answer, Briefing, Evidence } from '../api'
+import { judgeBriefing } from '../api'
+import type { ActionRow, Answer, Briefing, Evidence, JudgeReport } from '../api'
 import { numberSources, sectionOf } from '../cite'
 import type { Cite } from '../cite'
 import { count, dayMonth, daysBetween, shortDate } from '../format'
@@ -10,7 +11,8 @@ import type { Progress } from '../progress'
 import { conflictOptions } from '../workflow'
 import { AskPanel } from './AskPanel'
 import { SourcePanel } from './SourcePanel'
-import { AuthorTag, BulletList, BulletText, CiteChips, SectionNotes, SourceIcon, StatusText, Tag } from './common'
+import { AuthorTag, BulletList, BulletText, CiteChips, JudgeBadge, SectionNotes, SourceIcon, StatusText, Tag } from './common'
+import type { Judged } from './common'
 import { Button } from '@/components/ui/button'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Tone } from './common'
@@ -75,6 +77,26 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
   const [selected, setSelected] = useState<string | null>(null)
   const [current, setCurrent] = useState(0) // the section on screen
   const [agendaEdits, setAgendaEdits] = useState<Record<string, boolean>>({}) // opportunity -> on/off agenda
+  // The AI judge: asked on demand (one request, none when cached); labels only, counted by the API
+  const [judge, setJudge] = useState<JudgeReport | null>(null)
+  const [judging, setJudging] = useState(false)
+  const [judgeError, setJudgeError] = useState<string | null>(null)
+  const askJudge = async () => {
+    setJudging(true)
+    setJudgeError(null)
+    try {
+      setJudge(await judgeBriefing(userId, b.client_id))
+    } catch (e) {
+      setJudgeError(e instanceof Error ? e.message : 'The judge could not be reached.')
+    } finally {
+      setJudging(false)
+    }
+  }
+  const judged: Judged = (section, bullet) => judge?.bullets.find((x) => x.section === section && x.bullet === bullet)?.verdict
+  const judgedText = (section: string, text: string) => {
+    const i = sectionOf(b, section)?.bullets.findIndex((x) => x.text === text) ?? -1
+    return i >= 0 ? judged(section, i) : undefined
+  }
   const cite: Cite = {
     number: (id) => numbers.get(id) ?? 0,
     describe: (id) => ({ label: evidence[id]?.label ?? 'Source', source: evidence[id]?.source ?? null }),
@@ -137,7 +159,7 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
             )}
           </dl>
           <SectionNotes section={s('client_overview')} />
-          <BulletList section={s('client_overview')} cite={cite} compact />
+          <BulletList section={s('client_overview')} cite={cite} compact judged={judged} />
         </>
       ),
     },
@@ -167,7 +189,7 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
         <>
           <SectionNotes section={s('client_said')} />
           <span className="list-label">They said</span>
-          <BulletList section={s('client_said')} cite={cite} />
+          <BulletList section={s('client_said')} cite={cite} judged={judged} />
           {b.actions.length > 0 && <span className="list-label">We promised</span>}
           <div>
             {b.actions.map((a) => {
@@ -196,6 +218,7 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
                   <li key={i}>
                     <BulletText text={x.text} />
                     <CiteChips ids={x.citations} cite={cite} />
+                    <JudgeBadge verdict={judgedText('open_items', x.text)} />
                   </li>
                 ))}
               </ul>
@@ -269,6 +292,7 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
                   <p className="opp-pitch">
                     <BulletText text={why.text} />
                     <CiteChips ids={why.citations} cite={cite} />
+                    <JudgeBadge verdict={judgedText('opportunities', why.text)} />
                   </p>
                 ) : (
                   <span className="sub">
@@ -306,6 +330,7 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
                 <span className="news-text">
                   {x.text}
                   <CiteChips ids={x.citations} cite={cite} />
+                  <JudgeBadge verdict={judged('news', i)} />
                 </span>
               </div>
             )
@@ -393,6 +418,36 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
           </div>
         </section>
 
+        <section className="panel panel-pad" aria-labelledby="h-judge">
+          <div className="panel-head">
+            <h3 id="h-judge" className="h3">
+              Second opinion: AI judge
+            </h3>
+            <Button variant="outline" size="sm" className="ml-auto" disabled={judging} onClick={askJudge}>
+              {judging ? 'Judging…' : judge ? 'Ask again' : 'Ask the AI judge'}
+            </Button>
+          </div>
+          {!judge && !judgeError && (
+            <p className="small muted">
+              Another AI model checks each AI-written sentence against the sources it cites. It only picks a label; the
+              validator's checks stay the gate.
+            </p>
+          )}
+          {judgeError && <p className="small" style={{ color: 'var(--bad)' }}>{judgeError}</p>}
+          {judge?.note && <p className="small muted">{judge.note}</p>}
+          {judge?.judge && (
+            <p className="small">
+              Judged by <strong>{judge.judge}</strong>
+              {judge.cached && ' (cached)'}: {judge.verdicts.supported ?? 0} of {count(judge.claims, 'claim')} supported
+              {(judge.verdicts.unsupported ?? 0) > 0 && `, ${judge.verdicts.unsupported} not in their sources`}
+              {(judge.verdicts.contradicted ?? 0) > 0 && `, ${judge.verdicts.contradicted} contradicted`}
+              {(judge.verdicts.no_verdict ?? 0) > 0 && `, ${judge.verdicts.no_verdict} without an answer`}. Labels appear beside each
+              sentence.
+              {judge.self_judged && ' The judge is the same model as the writer, which tends to favour its own wording.'}
+            </p>
+          )}
+        </section>
+
         <article className="panel read-card" aria-labelledby="h-part">
           <div className="read-progress">
             <span className="mono small muted">
@@ -443,6 +498,7 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
                 <span style={{ flex: '1 1 auto', fontWeight: 500 }}>
                   <BulletText text={item.text} />
                   <CiteChips ids={item.citations} cite={cite} />
+                  <JudgeBadge verdict={judgedText('talking_points', item.text)} />
                 </span>
               </li>
             ))}

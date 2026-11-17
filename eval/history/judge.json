@@ -1,0 +1,30 @@
+{
+  "ran_at": "2026-11-17T13:37:35+00:00",
+  "judge_chain": [
+    "openrouter",
+    "gemini"
+  ],
+  "judges": [
+    "openrouter: nvidia/nemotron-3.5-super-vl:free"
+  ],
+  "writers": [
+    "gemini-3.5-flash-lite"
+  ],
+  "self_judged": false,
+  "briefings": 6,
+  "claims": 100,
+  "verdicts": {
+    "supported": 97,
+    "unsupported": 3,
+    "contradicted": 0,
+    "no_verdict": 0
+  },
+  "judge_faithfulness": 0.97,
+  "agreement_with_overlap": 0.91,
+  "both_supported": 91,
+  "both_unsupported": 0,
+  "judge_only_unsupported": 3,
+  "overlap_only_unsupported": 6,
+  "requests": 4,
+  "cache_hits": 2
+}

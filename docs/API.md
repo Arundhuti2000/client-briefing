@@ -316,6 +316,10 @@ steps are audited as `ask_router` (the routing decision), `ask_llm` (each model 
 agent), `validator` (a rejected agent answer) and `ask_answer` (the final answer), in addition to
 the tool calls themselves.
 
+#### `POST /briefings/{client_id}/judge`
+
+The AI judge's second opinion on the caller's briefing for this client (see [ARCHITECTURE.md](ARCHITECTURE.md#ai-judge)). No body. The briefing is rebuilt for the caller (from the cache when possible), then one judge request labels its AI-written bullets. Response (`JudgeReport`): `client_id`, `judge` (provider and model, or null), `writers`, `self_judged`, `claims`, `verdicts` (counts per label), `bullets` (`section`, `bullet` position, `verdict`: supported, unsupported, contradicted or no_verdict), `cached` and `note` (why nothing was judged). Errors: 401 without a known user; 404 for an unknown client. Audited as tool `judge`.
+
 ### Workflow and tasks
 
 #### `GET /briefings/{client_id}/workflow`

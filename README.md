@@ -4,7 +4,7 @@ Builds a pre-meeting client briefing from messy CRM data, metrics, notes and new
 Code decides what's true; the LLM only explains it, and code checks the explanation.
 See [SPEC.md](SPEC.md) for the system specification, [Documentation](#documentation) for the
 detailed design, and [DECISIONS.md](DECISIONS.md) for every decision and trade-off (numbered
-D1–D82), including the dated held-out results.
+D1–D83), including the dated held-out results.
 
 How AI was used in building this: see [AI_USAGE.md](AI_USAGE.md).
 
@@ -28,7 +28,7 @@ questions, and approves the briefing before it is shared, with follow-up tasks c
 | [docs/SECURITY.md](docs/SECURITY.md) | Entitlements, filtering in the query, injection defenses, the six validator rules, approval before sharing, audit and secrets |
 | [docs/EVALUATION.md](docs/EVALUATION.md) | Evaluation strategy, scorecard checks and targets, quality metrics, generated current results, held-out history, red team and CI |
 | [docs/OPERATIONS.md](docs/OPERATIONS.md) | Setup, configuration variables, make commands, LLM providers, request budget and caching, running the demo, troubleshooting |
-| [DECISIONS.md](DECISIONS.md) | Every design decision with its reason, rejected alternatives and cost (D1–D82) |
+| [DECISIONS.md](DECISIONS.md) | Every design decision with its reason, rejected alternatives and cost (D1–D83) |
 | [AI_USAGE.md](AI_USAGE.md) | How AI tools were used to build the prototype |
 
 ## Demo in 2 minutes
@@ -202,6 +202,7 @@ Run from the repo root with the venv activated.
 | `make test`  | Run unit tests                                         |
 | `make eval`  | Scorecard on dev, dev2 and held-out data, then the quality metrics report (template, no AI) |
 | `make eval-real` | The same, then again with the LLM chain in `.env` (adds faithfulness) |
+| `make eval-judge` | LLM as judge: a judge model (`JUDGE_CHAIN`) labels each AI-written claim in the dev briefings; code counts the labels |
 | `make eval-break` | The eval with the entitlement filter off: Restricted leakage must FAIL |
 | `make results` | Write the results sections of this README and docs/EVALUATION.md from the saved eval runs |
 | `make demo-check` | Replay the demo's AI paths from the cache (0 requests); PASS/FAIL per path |
@@ -329,6 +330,12 @@ Generated perturbations (aliases, typos, suffixes, case, look-alikes, true confl
 - With the model writing the text, every scorecard check passed (numeric accuracy 364/364 (100%); citation validity 151/151 (100%); restricted leakage 0 (in 12 checks); injection resistance 0 (in 26 checks)).
 - Some briefings replayed that model's cached answers; a cached answer already passed the validator once, so it can't count as a rejected first draft.
 - Faithfulness is a word-overlap and number check per claim, not a human judgment; a paraphrase can count as unsupported.
+
+**LLM as judge**
+
+- Dev briefings written by gemini-3.5-flash-lite, judged by openrouter: nvidia/nemotron-3.5-super-vl:free (run 2026-11-17 13:37 UTC): 97 of 100 claims supported, 3 unsupported, 0 contradicted, 0 without a verdict.
+- Agreement with the word-overlap check: 91% of judged claims (3 flagged by the judge only, 6 by the overlap check only).
+- The judge's labels are a second opinion, not ground truth: no human has checked them yet.
 
 **Held-out history**
 

@@ -2,7 +2,7 @@
 # or point at it directly:  make test PYTHON=.venv/Scripts/python
 PYTHON ?= python
 
-.PHONY: data dev2 holdout load unify briefing api web test eval eval-real eval-break results llm-check demo-check mcp
+.PHONY: data dev2 holdout load unify briefing api web test eval eval-real eval-judge eval-break results llm-check demo-check mcp
 
 # Which briefing `make briefing` prints: CLIENT is an ID, name or alias; USER_ID is u1 or u2.
 # (Not "AS" or "USER": make predefines AS as the assembler, and USER is a shell variable.)
@@ -61,6 +61,12 @@ eval-break:
 # The same, then again with the LLM in .env (cached answers cost no requests)
 eval-real:
 	$(PYTHON) -m eval.run_eval --real
+
+# LLM as judge: a judge model (JUDGE_CHAIN, else LLM_CHAIN) labels each AI-written claim in the
+# dev briefings supported, unsupported or contradicted; code counts the labels. One request per
+# briefing (cached); saves counts to eval/history/judge.json
+eval-judge:
+	$(PYTHON) -m eval.judge
 
 # Write the results sections of README.md and docs/EVALUATION.md from the saved eval reports (no number typed by hand)
 results:

@@ -41,6 +41,7 @@ All business logic lives in `app/`. The API, the evaluation harness, the MCP ser
 | Evaluation | `eval/run_eval.py` | Builds each dataset fresh in a temporary folder, runs the golden set, prints the scorecard and writes `eval/last_run.json` (`make eval-break` writes `eval/history/eval_break.json` instead). Exits non-zero when a zero-tolerance check fails. |
 | Evaluation | `eval/quality.py` | Quality metrics beside the scorecard: retrieval metrics, detector precision and recall on generated perturbations, router accuracy and faithfulness of AI-written bullets. |
 | Evaluation | `eval/report_md.py` | `make results`: rewrites the results sections of `README.md` and `docs/EVALUATION.md` from the saved reports. |
+| Evaluation | `eval/judge.py` | LLM as judge: a judge model labels each AI-written claim supported, unsupported or contradicted against its cited evidence; code counts the labels and compares them with the word-overlap check. Writes `eval/history/judge.json`. |
 | Evaluation | `eval/label_review.py` | Prints a Markdown pre-review of the retrieval labels (written with AI assistance; human review pending). Never changes them. |
 | MCP | `mcp_server/server.py` | The eight briefing tools and `get_source` over the official Python MCP SDK (stdio), marked read-only. Every call takes a `user_id`. See [API.md](API.md#mcp-server). |
 | Frontend | `web/src/App.tsx` | The application shell and its state: current user, page, open client, step, per-user briefing cache, deep links. |
@@ -380,6 +381,16 @@ Section labels state who wrote each part: "Computed by code · no AI", "Template
 ### Deep links and client-side state
 
 The query string accepts `user`, `client` (an ID, name or alias, resolved through the API), `step` (`gather`, `check`, `read`, `share`) and `page` (`meetings`, `clients`, `health`, `evals`), for example `?user=u2&client=NWC&step=read`. A deep link generates its briefing once. Switching user clears briefings, lists and progress, so one user's data is never shown to another.
+
+## AI judge
+
+`app/judge.py` gives a second opinion on AI-written text, on demand in the workspace (`POST /briefings/{client_id}/judge`, the "Ask the AI judge" button in the Read step) and in the evaluation (`make eval-judge`, see [EVALUATION.md](EVALUATION.md#llm-as-judge)).
+
+- Each AI-written bullet is split into claims; a judge model (`JUDGE_CHAIN`, else `LLM_CHAIN`, never the template) receives the claims with only their cited evidence, each item with its source and date, wrapped as data.
+- The judge picks one label per claim: supported, unsupported or contradicted. Code accepts only listed labels for listed claims, gives each bullet the worst label of its claims, and counts them.
+- Only labels and counts reach the screen; every visible word is written by code. The judge's one-line reasons are printed only by `make eval-judge`.
+- One request per briefing with AI-written text (none when cached), through the same cache, rate limits and `LLM_REQUEST_BUDGET`. Each call is audited as tool `judge`. The briefing is rebuilt for the requesting user, so the judge only sees evidence that user may see.
+- It is a second opinion, not a gate: the validator still decides what is shown. The Evaluations page shows the last `make eval-judge` counts.
 
 ## Prototype vs production
 

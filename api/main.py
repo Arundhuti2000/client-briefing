@@ -16,13 +16,15 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import ask, audit, db, orchestrator, retrieval, tools, workflow
+from app import ask, audit, db, judge, orchestrator, retrieval, tools, workflow
 from app.orchestrator import Briefing, BriefingError
 from app.tasks import Task, TaskError, TaskRequest, create_task
 from app.tools import ClientId, Fact, UserContext
 from app.unify import STALE_AFTER_DAYS
 from app.wording import AS_OF_DATE, day_month, period_text, signed_change, value_text
 from eval import run_eval
+
+JUDGE_HISTORY = run_eval.EVAL_DIR / "history" / "judge.json"  # written by make eval-judge
 
 
 @asynccontextmanager
@@ -247,6 +249,18 @@ def ask_follow_up(client_id: str, body: AskRequest, user: CurrentUser):
     return ask.answer(user, canonical, question)
 
 
+@app.post("/briefings/{client_id}/judge", response_model=judge.JudgeReport)
+def judge_briefing(client_id: str, user: CurrentUser):
+    """The AI judge's second opinion on this user's briefing: a label per AI-written bullet
+    (supported, unsupported, contradicted) and counts, all computed by code. On demand, because it
+    costs one request (none when cached). The briefing is rebuilt for this user, from the cache."""
+    try:
+        briefing = orchestrator.build_briefing(user, canonical_or_404(client_id))
+    except BriefingError as e:
+        raise HTTPException(status_code=404, detail=f"Client not found ({e}).")
+    return judge.judge_briefing(user, briefing)
+
+
 def canonical_or_404(client_id: str) -> str:
     with closing(db.connect()) as conn:
         canonical = db.canonical_client_id(conn, client_id)
@@ -308,7 +322,10 @@ def evaluations(user: CurrentUser) -> dict:
     could name restricted records). Written by eval/run_eval.py."""
     if not run_eval.REPORT_PATH.exists():
         raise HTTPException(status_code=404, detail="No scorecard yet. Run make eval.")
-    return json.loads(run_eval.REPORT_PATH.read_text(encoding="utf-8"))
+    report = json.loads(run_eval.REPORT_PATH.read_text(encoding="utf-8"))
+    if JUDGE_HISTORY.exists():  # make eval-judge: counts only, no claim text
+        report["judge"] = json.loads(JUDGE_HISTORY.read_text(encoding="utf-8"))
+    return report
 
 
 @app.get("/audit", response_model=list[AuditRow])

@@ -27,7 +27,7 @@
 | Date | 2026-11-17 |
 | Status | Prototype |
 | Owner | Arundhati Das |
-| Related documents | [README.md](README.md) (entry point and commands), [DECISIONS.md](DECISIONS.md) (decision log, D1–D82), [docs/](docs/) (detailed design) |
+| Related documents | [README.md](README.md) (entry point and commands), [DECISIONS.md](DECISIONS.md) (decision log, D1–D83), [docs/](docs/) (detailed design) |
 
 This document states what the system does and how it is verified. Detailed design lives in the
 documents under [docs/](docs/); every requirement links to the module that implements it and the
@@ -196,6 +196,7 @@ Operational setup, configuration and commands are in [docs/OPERATIONS.md](docs/O
 | Answering about records and numbers | No | The route's SQL tools; code writes one sentence per fact |
 | Answering about documents and news | **Yes** | Bounded tool-calling loop (at most three steps), then the validator |
 | No API key or no network | No | Template mode builds bullets directly from the evidence |
+| AI judge: a second opinion on AI-written text (`make eval-judge`; "Ask the AI judge" in the workspace) | **Yes** | A judge model labels each AI-written claim supported, unsupported or contradicted; code counts the labels and writes every visible word. Not a gate |
 
 ## 8. Data requirements
 
@@ -268,7 +269,8 @@ Full detail, including the current generated results, is in
 | Red team | Hidden instructions; direct restricted reads | 0 (zero tolerance) |
 
 - **Quality metrics** supplement the scorecard: retrieval precision and recall, detector accuracy
-  on generated perturbations, router accuracy, and faithfulness of real-model output.
+  on generated perturbations, router accuracy, and faithfulness of real-model output, checked by
+  word overlap and by an LLM judge whose labels code counts.
 - **Acceptance** for the prototype means:
   - every zero-tolerance check is 0 on every dataset;
   - the break test fails as designed;

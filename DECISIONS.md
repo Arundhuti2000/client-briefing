@@ -454,6 +454,13 @@ For the system specification see [SPEC.md](SPEC.md) and the detailed design in [
 - `make demo-check` replays the demo's paths (three briefings, three follow-up questions) with `CACHE_REPLAY=any` and a request budget of 0, so a cache miss shows as FAIL instead of spending a request or falling back to the template mid-demo.
 - `tests/test_e2e.py` walks the banker workflow through the API (resolve, briefing, sharing blocked, decisions, share, follow-up, cited source) and checks every surface Sam can reach for the restricted Helios records; text Sam typed himself doesn't count as a leak, and his probes must be answered exactly like a missing record.
 
+**D83. An LLM judge as a second opinion on faithfulness (2026-11-17).**
+- `make eval-judge` (`eval/judge.py`): a judge model sees each AI-written claim with only its cited evidence and picks one label: supported, unsupported or contradicted. Code accepts only listed labels for listed claims, counts them, and compares them claim by claim with the word-overlap check.
+- Why: the word-overlap check calls a correct paraphrase unsupported and can pass a claim that reuses the evidence's words with a changed meaning; a model judges meaning. The judge never produces a number, so the rule that numbers come from code still holds.
+- Separate from `make eval-real`, so it never rewrites the recorded real-model run; one request per briefing, through the same cache and request budget; `JUDGE_CHAIN` picks the judge, ideally a different provider from the writer (self-preference), and the report says when they are the same.
+- Rejected: a 1–10 score from the judge (a number the LLM makes up, and hard to compare across models); making it a gate (the judge is unverified; the validator stays the gate).
+- Cost: its labels are not ground truth until a person checks a sample; claim text and reasons are terminal-only, because they can come from restricted briefings.
+
 ---
 
 ## 14. Held-out rounds (dated record)

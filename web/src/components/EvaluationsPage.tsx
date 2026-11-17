@@ -5,7 +5,7 @@ import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Check, ShieldAlert, ShieldCheck } from 'lucide-react'
 import { ApiError, getEvaluations } from '../api'
-import type { EvalCheck, EvalNote, EvalReport, EvalRun, QualityReport, RetrievalReport } from '../api'
+import type { EvalCheck, EvalNote, EvalReport, EvalRun, JudgeHistory, QualityReport, RetrievalReport } from '../api'
 import { dateTime, errorMessage } from '../format'
 import type { Tone } from './common'
 
@@ -401,7 +401,7 @@ function Detectors({ report, note }: { report?: QualityReport['detectors'][strin
   )
 }
 
-function RouterAndAI({ q }: { q: QualityReport }) {
+function RouterAndAI({ q, judge }: { q: QualityReport; judge?: JudgeHistory }) {
   const r = q.router
   const right = sum(r.confusion.map((row, i) => row[i] ?? 0))
   const route = (name: string) => name.replaceAll('_', ' ')
@@ -503,6 +503,32 @@ function RouterAndAI({ q }: { q: QualityReport }) {
             </span>
           </div>
         )}
+        <div className="faith-card">
+          <span className="faith-kicker">AI judge (second opinion)</span>
+          {judge ? (
+            <>
+              <span className="faith-num mono">
+                {judge.verdicts.supported ?? 0}
+                <small>/{judge.claims}</small>
+              </span>
+              <span className="note">
+                claims the judge found supported; {judge.verdicts.unsupported ?? 0} unsupported,{' '}
+                {judge.verdicts.contradicted ?? 0} contradicted
+              </span>
+              <Bar value={judge.claims ? (judge.verdicts.supported ?? 0) / judge.claims : 0} tone="indigo" />
+              <span className="small muted">
+                Judged by {judge.judges.join(', ')}; written by {judge.writers.join(', ')}.
+                {judge.agreement_with_overlap !== null &&
+                  ` Agrees with the word-overlap check on ${pct(judge.agreement_with_overlap)} of claims.`}
+                {judge.self_judged && ' The judge is the same model as the writer.'}
+              </span>
+            </>
+          ) : (
+            <span className="note">
+              Not run yet. Use <code className="code">make eval-judge</code>.
+            </span>
+          )}
+        </div>
       </section>
     </div>
   )
@@ -652,7 +678,7 @@ export function EvaluationsPage({ userId }: { userId: string }) {
             {tab === 'traps' && <Traps views={views} />}
             {tab === 'retrieval' && (q ? <Retrieval report={q.retrieval[view.data]} /> : needsQuality)}
             {tab === 'detectors' && (q ? <Detectors report={q.detectors[view.data]} note={note} /> : needsQuality)}
-            {tab === 'router' && (q ? <RouterAndAI q={q} /> : needsQuality)}
+            {tab === 'router' && (q ? <RouterAndAI q={q} judge={report.judge} /> : needsQuality)}
             {tab === 'proves' && (note ? <Proves note={note} /> : needsQuality)}
           </div>
         </>

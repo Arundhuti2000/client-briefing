@@ -100,6 +100,24 @@ def faithfulness() -> list[str]:
     return lines
 
 
+def judge() -> list[str]:
+    j = load(HISTORY / "judge.json")
+    if not j:
+        return ["Not run yet: `make eval-judge` (a judge model labels each AI-written claim; code counts the labels)."]
+    v = j["verdicts"]
+    lines = [f"- Dev briefings written by {', '.join(j['writers'])}, judged by {', '.join(j['judges'])} "
+             f"(run {j['ran_at'][:16].replace('T', ' ')} UTC): {v['supported']} of {j['claims']} claims supported, "
+             f"{v['unsupported']} unsupported, {v['contradicted']} contradicted, {v['no_verdict']} without a verdict."]
+    if j["agreement_with_overlap"] is not None:
+        lines.append(f"- Agreement with the word-overlap check: {j['agreement_with_overlap']:.0%} of judged claims "
+                     f"({j['judge_only_unsupported']} flagged by the judge only, {j['overlap_only_unsupported']} by the "
+                     f"overlap check only).")
+    if j["self_judged"]:
+        lines.append("- The judge was the same model as the writer, which tends to favour its own wording.")
+    lines.append("- The judge's labels are a second opinion, not ground truth: no human has checked them yet.")
+    return lines
+
+
 def history() -> list[str]:
     lines = []
     round1 = load(HISTORY / "holdout_round1.json")
@@ -134,6 +152,7 @@ def results_markdown() -> str:
              "**Detectors**", "", *detectors(q, all_sets), "",
              "**Router**", "", *router(q), "",
              "**Faithfulness with a real model**", "", *faithfulness(), "",
+             "**LLM as judge**", "", *judge(), "",
              "**Held-out history**", "", *history()]
     return "\n".join(parts)
 

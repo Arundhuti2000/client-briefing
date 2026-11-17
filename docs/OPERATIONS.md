@@ -76,6 +76,7 @@ make test     # unit tests (temporary folders, template LLM only)
 | `LLM_TIMEOUT_SECONDS` | `30` | `app/llm.py`, once at import | Timeout for each provider call; a call that exceeds it fails and the chain moves on. |
 | `LLM_REQUEST_BUDGET` | unset (no cap) | `app/llm.py`, before every request | Maximum number of real LLM requests for the process. Once used up, further requests are refused and the chain moves on. |
 | `CACHE_REPLAY` | empty | `app/llm.py`, on every cache lookup | `any` also replays a cached briefing answer that passed the validator, even from a model no longer in `LLM_CHAIN`. |
+| `JUDGE_CHAIN` | empty | `eval/judge.py` | Providers that judge AI-written claims in `make eval-judge`, in order, like `LLM_CHAIN`; empty means `LLM_CHAIN`. `mock` is ignored because the template cannot judge. |
 | `EVAL_BREAK_ENTITLEMENTS` | unset | `eval/run_eval.py` | `1` switches the entitlement filter off inside the evaluation process only. Set by `make eval-break`; the app and API have no such switch. |
 | `VITE_API_BASE` | `http://localhost:8000` | `web/src/api.ts` (Vite) | Base URL the frontend calls. Set in the shell before `make web`, or in a Vite env file in `web/` such as `web/.env.local` (excluded by `web/.gitignore`). |
 
@@ -104,6 +105,7 @@ Run every target from the repository root with the virtual environment activated
 | `make test` | `python -m pytest` | Runs the unit tests in `tests/` against temporary data. | None in `data/` |
 | `make eval` | `python -m eval.run_eval` | Scorecards on the dev, dev2 and held-out datasets (each rebuilt in a temporary folder) with the template LLM, then the quality-metrics report. Exits with code 1 if a zero-tolerance check fails. | `eval/last_run.json` |
 | `make eval-break` | `python -m eval.run_eval` with `EVAL_BREAK_ENTITLEMENTS=1` | The evaluation with the entitlement filter switched off in that process; restricted leakage must fail and the run must exit non-zero. | `eval/history/eval_break.json` only |
+| `make eval-judge` | `python -m eval.judge` | Builds the dev briefings with `LLM_CHAIN` and has a judge model (`JUDGE_CHAIN`) label each AI-written claim supported, unsupported or contradicted; code counts the labels. One request per briefing with AI-written claims. | `eval/history/judge.json`; LLM cache |
 | `make eval-real` | `python -m eval.run_eval --real` | As `make eval`, then the dev cases again through the configured `LLM_CHAIN` (skipped when the chain is only `mock`). | `eval/last_run.json`, `eval/history/eval_real.json`; LLM cache |
 | `make results` | `python -m eval.report_md` | Rewrites the text between the results markers in `README.md` and in `docs/EVALUATION.md` (Current results) from the saved reports, and the key numbers of a `PRESENTATION.md` in the root, if one exists. | `README.md`, `docs/EVALUATION.md` |
 | `make llm-check` | `python -m app.llm_check` | Sends one small request to each configured provider and prints which work. | None |

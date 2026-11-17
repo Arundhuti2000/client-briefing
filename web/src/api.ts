@@ -69,7 +69,12 @@ export type QualityReport = {
   note: EvalNote | string[] // string[]: reports written before the note had titles
 }
 export type EvalNote = { proves: string[]; not_proves: { title: string; detail: string }[] }
-export type EvalReport = { ran_at: string; runs: EvalRun[]; holdout_runs?: EvalRun[]; quality?: QualityReport }
+export type JudgeHistory = {
+  ran_at: string; judges: string[]; writers: string[]; self_judged: boolean; briefings: number; claims: number
+  verdicts: Record<string, number>; agreement_with_overlap: number | null
+  judge_only_unsupported: number; overlap_only_unsupported: number
+}
+export type EvalReport = { ran_at: string; runs: EvalRun[]; holdout_runs?: EvalRun[]; quality?: QualityReport; judge?: JudgeHistory }
 
 export type ResolveResponse = {
   query: string
@@ -278,6 +283,16 @@ export const createBriefing = (userId: string, clientId: string, meetingDate: st
     method: 'POST',
     body: JSON.stringify({ client_id: clientId, meeting_date: meetingDate }),
   })
+
+// The AI judge (app/judge.py): a label per AI-written bullet, counted by code
+export type Verdict = 'supported' | 'unsupported' | 'contradicted' | 'no_verdict'
+export type JudgeReport = {
+  client_id: string; judge: string | null; writers: string[]; self_judged: boolean; claims: number
+  verdicts: Record<string, number>; bullets: { section: string; bullet: number; verdict: Verdict }[]
+  cached: boolean; note: string | null
+}
+export const judgeBriefing = (userId: string, clientId: string) =>
+  request<JudgeReport>(`/briefings/${encodeURIComponent(clientId)}/judge`, userId, { method: 'POST' })
 
 export const askFollowUp = (userId: string, clientId: string, question: string) =>
   request<Answer>(`/briefings/${encodeURIComponent(clientId)}/ask`, userId, {

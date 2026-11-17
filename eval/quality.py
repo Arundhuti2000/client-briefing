@@ -23,6 +23,7 @@ from contextlib import closing
 
 from app import db, router, tools, validate
 from app.ingest import Document
+from app.judge import claims_of  # the same claims the AI judge labels
 from app.retrieval import RRF_K, bm25_ranking, load_embeddings, reciprocal_rank_fusion, vector_ranking
 from app.unify import flag_commitment_conflicts, flag_role_conflicts, flag_stale_statements, stale_as_ofs
 from app.wording import AS_OF_DATE
@@ -318,10 +319,14 @@ def content_words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9$%.]+", text.lower()) if len(w) > 3 and w not in STOPWORDS}
 
 
-def claims_of(text: str) -> list[str]:
-    """A bullet as claims: its sentences and semicolon-separated parts (the contradiction note too)."""
-    parts = re.split(r"(?<=[.!?])\s+|;\s+|\s*⚠ Contradicted:\s*", text)
-    return [p.strip() for p in parts if len(p.split()) >= 3]
+def claim_supported(claim: str, cited: list) -> tuple[bool, float]:
+    """The word-overlap check for one claim: its numbers and dates are in the cited evidence and
+    at least half of its content words are there. Returns (supported, overlap)."""
+    words = content_words(claim)
+    evidence_words = content_words(" ".join(e.text for e in cited))
+    bad_dates, bad_numbers = validate.unsupported_facts(claim, cited)
+    overlap = len(words & evidence_words) / len(words) if words else 1.0
+    return not bad_dates and not bad_numbers and overlap >= 0.5, overlap
 
 
 def faithfulness(briefings: list) -> dict:
@@ -338,12 +343,8 @@ def faithfulness(briefings: list) -> dict:
                 continue
             for bullet in s.bullets:
                 cited = [b.evidence[c] for c in bullet.citations if c in b.evidence]
-                evidence_words = content_words(" ".join(e.text for e in cited))
                 for claim in claims_of(bullet.text):
-                    words = content_words(claim)
-                    bad_dates, bad_numbers = validate.unsupported_facts(claim, cited)
-                    overlap = len(words & evidence_words) / len(words) if words else 1.0
-                    ok = not bad_dates and not bad_numbers and overlap >= 0.5
+                    ok, overlap = claim_supported(claim, cited)
                     total += 1
                     supported += ok
                     if not ok and len(examples) < 8:

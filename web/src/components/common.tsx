@@ -1,7 +1,7 @@
 // Small building blocks shared by every screen: source icons, citation chips, tags,
 // who-wrote-it labels, retry notes, bullets and status dots. Built on shadcn/ui.
 import type { ReactNode } from 'react'
-import type { Section } from '../api'
+import type { Section, Verdict } from '../api'
 import type { Cite } from '../cite'
 import { sourceKind } from '../sources'
 import { Badge } from '@/components/ui/badge'
@@ -73,7 +73,21 @@ export function BulletText({ text }: { text: string }) {
   )
 }
 
-export function BulletList({ section, cite, compact }: { section?: Section; cite: Cite; compact?: boolean }) {
+// The AI judge's label for one bullet (words written here, by code; never by the judge)
+export type Judged = (section: string, bullet: number) => Verdict | undefined
+const VERDICT_TAGS: Record<Verdict, [Tone, string]> = {
+  supported: ['good', 'Judge: supported'],
+  unsupported: ['warn', 'Judge: not in its sources'],
+  contradicted: ['bad', 'Judge: contradicts its sources'],
+  no_verdict: ['muted', 'Judge: no answer'],
+}
+export function JudgeBadge({ verdict }: { verdict?: Verdict }) {
+  if (!verdict) return null
+  const [tone, label] = VERDICT_TAGS[verdict]
+  return <Tag tone={tone} className="ml-1.5 align-middle text-[11px]">{label}</Tag>
+}
+
+export function BulletList({ section, cite, compact, judged }: { section?: Section; cite: Cite; compact?: boolean; judged?: Judged }) {
   if (!section || section.bullets.length === 0) return null
   return (
     <ul className={cn('bullets', compact && 'bullets-compact')}>
@@ -81,6 +95,7 @@ export function BulletList({ section, cite, compact }: { section?: Section; cite
         <li key={i}>
           <BulletText text={b.text} />
           <CiteChips ids={b.citations} cite={cite} />
+          <JudgeBadge verdict={judged?.(section.id, i)} />
         </li>
       ))}
     </ul>
