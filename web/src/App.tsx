@@ -102,7 +102,8 @@ function App() {
     setClientId(id)
     setError(null)
     goTo(id, s)
-    if (!briefings[key(userId, id)]) generate(userId, id)
+    // generate once: not again while it is loading (a second click would double the LLM calls)
+    if (!briefings[key(userId, id)] && loadingKey !== key(userId, id)) generate(userId, id)
   }
 
   function changeUser(id: string) {

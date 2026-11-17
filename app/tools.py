@@ -52,7 +52,7 @@ class Fact(BaseModel):
 class ToolResult(BaseModel):
     ok: bool
     facts: list[Fact] = []
-    error: str | None = None       # invalid_input, client_not_found, ambiguous_client, not_found,
+    error: str | None = None       # invalid_input, unknown_tool, client_not_found, ambiguous_client, not_found,
                                    # data_unavailable, audit_unavailable, internal_error
     candidates: list[str] = []     # client IDs the user might have meant
 
@@ -112,6 +112,7 @@ def tool(request_model: type[Request]):
             except Exception:
                 return ToolResult(ok=False, error=result.error or "audit_unavailable")  # no audit, no data
             return result
+        run.request_model = request_model  # the schema, also offered to models as a tool definition
         return run
     return decorate
 
@@ -304,3 +305,35 @@ def load_user(user_id: str) -> UserContext | None:
     if row is None:
         return None
     return UserContext(user_id=row["user_id"], entitlements=json.loads(row["entitlements"]))
+
+# ---------------------------------------------------------------------------
+# For a tool-calling model (the follow-up agent): the same tools, in the OpenAI format
+# ---------------------------------------------------------------------------
+
+AGENT_TOOLS = [resolve_client, get_client_profile, get_metrics, get_opportunities, get_open_items,
+               search_documents, get_news, get_data_quality_flags]
+
+
+def openai_tool_specs() -> list[dict]:
+    """Our tools as OpenAI-style function definitions, generated from the same Pydantic request
+    models that validate every call. The user is never a parameter: identity and entitlements
+    come from the session, so a model can't ask to see more."""
+    return [{"type": "function",
+             "function": {"name": t.__name__, "description": " ".join((t.__doc__ or "").split()),
+                          "parameters": t.request_model.model_json_schema()}}
+            for t in AGENT_TOOLS]
+
+
+def call_tool(user: UserContext, name: str, arguments: str) -> ToolResult:
+    """Run one tool call a model asked for. Unknown tools and malformed arguments are refused;
+    valid ones go through the same validation, entitlement filter and audit as any other call."""
+    tool_by_name = {t.__name__: t for t in AGENT_TOOLS}
+    if name not in tool_by_name:
+        return ToolResult(ok=False, error="unknown_tool")
+    try:
+        kwargs = json.loads(arguments or "{}")
+    except json.JSONDecodeError:
+        return ToolResult(ok=False, error="invalid_input")
+    if not isinstance(kwargs, dict):
+        return ToolResult(ok=False, error="invalid_input")
+    return tool_by_name[name](user, **kwargs)

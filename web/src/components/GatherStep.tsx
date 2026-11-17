@@ -47,7 +47,8 @@ export function GatherStep({ briefing: b }: { briefing: Briefing }) {
   ]
 
   const ai = b.sections.some((s) => s.author === 'ai')
-  const models = [...new Set(b.llm_runs.filter((r) => r.provider !== 'mock').map((r) => r.model + (r.cached ? ' (cached)' : '')))]
+  const models = [...new Set(b.llm_runs.filter((r) => r.provider !== 'mock' && r.provider !== 'none')
+    .map((r) => `${r.provider}: ${r.model} (${r.cached ? 'cached' : `${r.seconds} s`})`))]
   const passed = b.sections.filter((s) => s.check.passed).length
   const rejected = b.sections.filter((s) => s.retry_errors.length > 0).length
   const notes = [...new Set(b.llm_runs.flatMap((r) => r.notes))]
@@ -56,7 +57,7 @@ export function GatherStep({ briefing: b }: { briefing: Briefing }) {
     ['Match the client', 'Aliases, duplicates and stale data, by rules.', 'Rules'],
     ['Compute numbers', 'Typed SQL, formatted by code.', 'SQL'],
     ['Find documents', 'Keyword and meaning search.', 'Search'],
-    ['Write the narrative', ai ? `One call to ${models.join(', ')}.` : 'Template (no AI), built from the evidence.', ai ? 'AI' : 'Template'],
+    ['Write the narrative', ai ? `Written by ${models.join(', ')}.` : 'Template (no AI), built from the evidence.', ai ? 'AI' : 'Template'],
     ['Check every line', `${passed} of ${b.sections.length} sections passed; ${count(rejected, 'first draft')} rejected.`, 'Rules'],
   ]
 

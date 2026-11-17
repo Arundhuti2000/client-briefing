@@ -2,7 +2,7 @@
 
 import os
 
-os.environ["LLM_PROVIDER"] = "mock"  # tests never call a real model, whatever .env says
+os.environ["LLM_CHAIN"] = "mock"  # tests never call a real model, whatever .env says
 
 import pytest  # noqa: E402
 

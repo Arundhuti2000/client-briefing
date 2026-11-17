@@ -87,20 +87,43 @@ export function BulletList({ section, cite, compact }: { section?: Section; cite
   )
 }
 
-// Who wrote a section, honestly: "AI" only when a real model wrote it and every check passed
+const PROVIDER_NAMES: Record<string, string> = { gemini: 'Gemini', openrouter: 'OpenRouter', ollama: 'Ollama' }
+
+// Who wrote a section, honestly: "AI" (with the provider and the model that answered) only when
+// a real model wrote it and every check passed
 export function AuthorTag({ section, className }: { section?: Section; className?: string }) {
   if (!section) return null
-  if (section.status === 'unavailable') return <Tag tone="bad" className={className}>Unavailable</Tag>
-  if (!section.check.passed) return <Tag tone="bad" className={className}>Checks failed</Tag>
+  const label = cn('author-tag', className) // .author-tag sits at the right end of a section heading
+  if (section.status === 'unavailable') return <Tag tone="bad" className={label}>Unavailable</Tag>
+  if (!section.check.passed) return <Tag tone="bad" className={label}>Checks failed</Tag>
   switch (section.author) {
     case 'code':
-      return <Tag className={className}>Computed by code · no AI</Tag>
+      return <Tag className={label}>Computed by code · no AI</Tag>
     case 'template':
-      return <Tag className={className}>Template (no AI)</Tag>
+      return <Tag className={label}>Template (no AI)</Tag>
     case 'evidence':
-      return <Tag tone="warn" className={className}>Source facts shown</Tag>
-    default:
-      return <Tag tone="indigo" className={className}>AI written · checks passed</Tag>
+      return <Tag tone="warn" className={label}>Source facts shown</Tag>
+    default: {
+      // "nvidia/nemotron-3.5-super-vl:free" shows as "nemotron-3.5-super-vl:free"; the full ID is in the tooltip
+      const provider = PROVIDER_NAMES[section.provider ?? ''] ?? section.provider
+      const model = section.written_by.split('/').pop()
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className={cn('inline-flex min-w-0 max-w-full', label)}>
+              <Tag tone="indigo" className="max-w-full">
+                <span className="truncate">
+                  AI · {provider} · {model}
+                </span>
+              </Tag>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            Written by {section.written_by} via {provider}. Every citation, number and date was checked by code.
+          </TooltipContent>
+        </Tooltip>
+      )
+    }
   }
 }
 

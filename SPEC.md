@@ -30,7 +30,7 @@ Due **Tuesday 11/17, 9 AM EST**. Build the must-haves first. Stop adding feature
 | Vector search (required) | `sentence-transformers` all-MiniLM-L6-v2 | Runs locally, no API key or rate limit; vectors kept in NumPy and cached to disk (25 docs needs no vector database) |
 | Fuzzy matching | `rapidfuzz` | Alias and name matching |
 | Contracts | Pydantic | Typed tool inputs and outputs |
-| LLM | `Gemini via the google-genai SDK (GEMINI_API_KEY, GEMINI_MODEL in .env), with LLM_PROVIDER=mock as the default and demo fallback` | Demo still works with no key or no network |
+| LLM | `A provider chain from LLM_CHAIN (default gemini,openrouter,ollama,mock): Gemini via google-genai, OpenRouter via the OpenAI SDK (one request falls through OPENROUTER_MODELS), a local Ollama model, then the template` | Demo still works with no key or no network |
 | UI | React (Vite + TypeScript) frontend, FastAPI backend | All logic stays in Python behind a typed API; React is a thin display layer |
 | Tests and eval | pytest, plus `eval/run_eval.py` | Scorecard for the presentation |
 
@@ -104,6 +104,7 @@ The top row runs once to build clean data; the bottom row runs per briefing, and
 | Access control | No | Enforced in SQL and in search filters, before any LLM sees data |
 | Metrics and numbers | No | Pulled from SQL and formatted by code |
 | Choosing which sections to build | No | A fixed plan of seven sections; predictable and testable |
+| Routing a follow-up question to the right tools | Mostly no | `app/router.py`: keyword rules, then a meaning match against example questions with the local embedding model; only when both are unsure, one LLM request that must name a route from the list (otherwise document search). Number and record routes are answered by code from SQL; only documents and news use the LLM, through the validator |
 | Extracting asks, commitments, and open items from notes | Yes | Free text needs language understanding; output is validated JSON with source IDs |
 | Writing each section's narrative | Yes | Turns evidence into readable prose, citing evidence IDs |
 | Ranking which opportunities to discuss | Partly | Code scores by pipeline value and recency; the LLM writes the why, citing evidence |
@@ -327,7 +328,7 @@ Implementation notes:
 - The last interaction is the latest meeting note or prior briefing *this user may see*, so a restricted note can't shift the date.
 - Opportunities are ranked by code by expected value (estimate × stage probability: Discovery 0.2, Proposal 0.5, Negotiation 0.8), then recency. Lost and Won opportunities are listed but never ranked as live (T6).
 - Conflict flags whose sources appear in a section are added to that section's evidence, so the narrative can mention them.
-- Retry sends only the failed sections, with their errors, so a briefing costs at most two LLM calls. A section that fails twice shows its evidence as bullets (`status: fallback`).
+- Retry sends only the failed sections, with their errors, to the same provider. If they fail again, the next provider in `LLM_CHAIN` writes them (a fresh draft, then one retry); after the last provider, a section shows its evidence as bullets (`status: fallback`). Usually a briefing is one call; the worst case is two per provider in the chain. Each section records the provider and the model that answered, and only answers that pass every check are marked validated in the cache.
 - A tool error makes only its own section `unavailable`; the rest still renders. An unknown client stops the briefing.
 - `make briefing CLIENT=NWC USER_ID=u2` prints a briefing as Markdown (the same text as the export button).
 
@@ -356,7 +357,7 @@ Ask for JSON:
  "bullets": [{"text": "…", "citations": ["SQL:opportunities:O-104", "DOC:note_007"]}]}
 ```
 
-**Mock mode:** with `LLM_PROVIDER=mock` (the default), `llm.py` returns bullets built directly from the evidence bundle, skipping titles, greetings, and instruction-like sentences. The demo then works with no API key and no network, which is a safe fallback for the live presentation. `LLM_PROVIDER=ollama` calls a local model over HTTP (`OLLAMA_URL`, `OLLAMA_MODEL`); every provider returns the same JSON. Tests always force mock mode, so they never spend a Gemini request.
+**Provider chain:** `LLM_CHAIN` lists providers in order (default `gemini,openrouter,ollama,mock`). A request moves down the chain on a 429 (after one retry), 402, 5xx, timeout or missing key. `gemini` uses google-genai; `openrouter` uses the OpenAI SDK at `https://openrouter.ai/api/v1` and sends ONE request with the first of `OPENROUTER_MODELS` as `model` and the rest as OpenRouter's `models` fallback array, asking for our `Draft` JSON schema (`response_format` `json_schema`) and, if that is refused with a 400, plain JSON mode; the response's `model` field names the model that answered. `ollama` calls a local model over HTTP; `mock` is the template: bullets built directly from the evidence bundle, skipping titles, greetings and instruction-like sentences, so the demo works with no key and no network. Every provider returns the same JSON, and the validator decides. The cache is `.cache/llm/<evidence hash>/<provider>--<model>.json`; `CACHE_REPLAY=any` replays any cached answer that passed the validator. `make llm-check` pings each provider. For the follow-up agent, `tools.openai_tool_specs()` offers the read-only tools in the OpenAI tool-calling format, generated from the same Pydantic request models, and `tools.call_tool()` runs a model's call through the same validation, entitlement filter and audit (the user is never a parameter). Tests always force `LLM_CHAIN=mock`, and the provider tests use fake providers, so they never spend a request.
 
 ### Gemini free-tier limits (design around these)
 
@@ -369,7 +370,7 @@ Twenty requests a day is the real constraint. One call per section would be 7 ca
 
 1. **One LLM call per briefing, not per section.** Send all sections' evidence in one prompt and get all sections back as one JSON object (`{"sections": [...]}`). That's 1 request per briefing. Sections that are pure numbers (the metrics table) never call the LLM.
 2. **Cache every response on disk,** keyed by a hash of the evidence bundle plus the model name (`.cache/llm/<hash>.json`). Regenerating the same briefing costs zero requests, so rehearsals and the live demo are free and instant. A cached answer from *any* configured model is used before calling any API, so a rehearsal never spends a request on a model that failed last time.
-3. **Rate limiter and retries:** at most 4 calls a minute; on a 429 error, wait with backoff and retry once, then fall back to Flash Lite, then to mock. The briefing always renders. Each call has a 60-second timeout, so a slow or overloaded model (504 DEADLINE_EXCEEDED, 503 UNAVAILABLE) also falls back instead of hanging. The SDK's own retries are switched off, so no request is spent without our policy deciding to, and thinking is set to LOW because the model rewrites given evidence rather than reasoning. Why a fallback happened is shown as a warning and in the briefing footer.
+3. **Rate limiter and retries:** at most 4 calls a minute; on a 429 error, wait with backoff and retry once, then move down `LLM_CHAIN` (the next Gemini model, OpenRouter, Ollama, the template). The briefing always renders. Each call has a 60-second timeout, so a slow or overloaded model (504 DEADLINE_EXCEEDED, 503 UNAVAILABLE) also falls back instead of hanging. The SDK's own retries are switched off, so no request is spent without our policy deciding to, and thinking is set to LOW because the model rewrites given evidence rather than reasoning. Why a fallback happened is shown as a warning and in the briefing footer.
 4. **Eval runs in mock mode.** Run the real model on only 2 or 3 golden cases, and say so in the presentation.
 5. **Budget the 40 daily requests** (20 Flash + 20 Flash Lite): about 10 for development, 10 for checking the eval, and keep the rest for the demo. Build everything in mock first.
 6. **Model names come from `.env`** (`GEMINI_MODEL=gemini-3.5-flash-lite`, `GEMINI_FALLBACK_MODEL` empty), so switching needs no code change. Flash Lite only: its free tier allows 15 requests a minute and 500 a day, against 5 and 20 for gemini-3.8-flash. An empty fallback means a failed call goes straight to the template. (Google has retired gemini-2.5-flash and gemini-2.5-flash-lite for new API keys: they return 404 “no longer available to new users”. The limits in the table above are for the 2.5 models; check the 3.x free-tier limits in AI Studio. The design, one call per briefing with a cache and a fallback, doesn't change.)

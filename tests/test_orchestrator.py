@@ -6,7 +6,7 @@ import json
 import pytest
 
 from app import audit, db, llm, orchestrator, tools
-from app.orchestrator import PLAN, BriefingError, build_briefing
+from app.orchestrator import PLAN, BriefingError, build_briefing, to_markdown
 from app.tools import ToolResult
 
 
@@ -104,20 +104,27 @@ def test_a_failed_tool_makes_only_its_section_unavailable(sam, monkeypatch):
     assert all(v == "ok" for k, v in status.items() if k != "news")
 
 
+def fake_llm(calls, invents_on: set[str]):
+    """A fake write_sections: the template's (valid) bullets, except that providers in `invents_on`
+    add an invented number to the opportunities section."""
+    def write_sections(sections, feedback=None, chain=None):
+        calls.append((sorted(s.section for s in sections), feedback, list(chain)))
+        data = llm.mock_completion(sections, notes=[]).data
+        if chain[0] in invents_on:
+            for section in data["sections"]:
+                if section["section"] == "opportunities":
+                    section["bullets"][0]["text"] += " Worth $9M."
+        return llm.Completion(data=data, provider=chain[0], model=f"{chain[0]}-model")
+    return write_sections
+
+
 def test_invented_number_is_retried_once_then_falls_back_to_evidence(sam, monkeypatch):
     calls = []
-
-    def fake_write_sections(sections, feedback=None):
-        calls.append((sorted(s.section for s in sections), feedback))
-        data = llm.mock_completion(sections, notes=[]).data
-        for section in data["sections"]:
-            if section["section"] == "opportunities":  # this section always invents a number
-                section["bullets"][0]["text"] += " Worth $9M."
-        return llm.Completion(data=data, provider="fake", model="fake-model")
-
-    monkeypatch.setattr(llm, "write_sections", fake_write_sections)
+    monkeypatch.setenv("LLM_CHAIN", "gemini")  # one provider only: nothing to move on to
+    monkeypatch.setattr(llm, "write_sections", fake_llm(calls, invents_on={"gemini"}))
     briefing = build_briefing(sam, "C001")
     assert len(calls) == 2 and calls[1][0] == ["opportunities"]  # only the failed section is retried
+    assert calls[1][2] == ["gemini"]  # ... on the same provider
     assert "numbers not in its cited evidence: ['$9M']" in calls[1][1]["opportunities"][0]
     section = next(s for s in briefing.sections if s.id == "opportunities")
     assert (section.status, section.written_by, section.check.passed) == ("fallback", "evidence (fallback)", True)
@@ -127,7 +134,21 @@ def test_invented_number_is_retried_once_then_falls_back_to_evidence(sam, monkey
     rejected = [r for r in audit.recent(20) if r["tool"] == "validator"]
     assert rejected and "$9M" in rejected[0]["error"]  # and in the audit log
     assert not any("$9M" in bullet.text for s in briefing.sections for bullet in s.bullets)  # never displayed
-    assert next(s for s in briefing.sections if s.id == "news").written_by == "fake-model"
+    news = next(s for s in briefing.sections if s.id == "news")
+    assert (news.provider, news.written_by, news.author) == ("gemini", "gemini-model", "ai")
+
+
+def test_after_two_failed_drafts_the_next_provider_in_the_chain_writes_the_section(sam, monkeypatch):
+    calls = []
+    monkeypatch.setenv("LLM_CHAIN", "gemini,openrouter,mock")
+    monkeypatch.setattr(llm, "write_sections", fake_llm(calls, invents_on={"gemini"}))
+    briefing = build_briefing(sam, "C001")
+    assert [c[2] for c in calls] == [["gemini", "openrouter", "mock"], ["gemini"], ["openrouter", "mock"]]
+    assert calls[2][0] == ["opportunities"] and calls[2][1] is None  # a fresh draft from the next provider
+    section = next(s for s in briefing.sections if s.id == "opportunities")
+    assert (section.provider, section.written_by, section.author) == ("openrouter", "openrouter-model", "ai")
+    assert section.retry_note == "First draft rejected: a number wasn't in its source. Regenerated and verified."
+    assert "(openrouter: openrouter-model)" in to_markdown(briefing)  # labelled with who answered
 
 
 def test_markdown_export(northwind):

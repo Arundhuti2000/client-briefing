@@ -29,7 +29,7 @@ from pathlib import Path
 
 import yaml
 
-from app import db, tools, unify, validate  # noqa: F401  (app.tools imports app.llm, which loads .env)
+from app import db, llm, tools, unify, validate  # app.llm loads .env
 from app.ingest import load_documents
 from app.orchestrator import NEWS_WINDOW_DAYS, Briefing, build_briefing, to_markdown
 from app.tools import UserContext
@@ -333,12 +333,12 @@ def main() -> None:
     parser.add_argument("--real", action="store_true", help="also run every case with the LLM set in .env")
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8")
-    configured = os.getenv("LLM_PROVIDER", "mock").lower()  # from .env
+    configured = ",".join(llm.llm_chain())  # LLM_CHAIN from .env
     golden = yaml.safe_load(GOLDEN_PATH.read_text(encoding="utf-8"))
     providers = ["mock"]
     if args.real:
         if configured == "mock":
-            print("--real: LLM_PROVIDER in .env is mock, so there is no real LLM to run.")
+            print("--real: LLM_CHAIN in .env is only mock, so there is no real LLM to run.")
         else:
             providers.append(configured)
 
@@ -351,7 +351,7 @@ def main() -> None:
         traps = {t["trap_id"]: t for t in json.loads((data_dir / "planted_traps.json").read_text(encoding="utf-8"))}
         injected = injected_sentences(data_dir)
         for provider in providers:
-            os.environ["LLM_PROVIDER"] = provider  # read by app/llm.py on every call
+            os.environ["LLM_CHAIN"] = provider  # read by app/llm.py on every call ("mock", or the real chain)
             run = run_golden(golden, traps, injected)
             cards.append(scorecard(run, provider, len(golden["cases"]), traps))
             print_scorecard(cards[-1], run)

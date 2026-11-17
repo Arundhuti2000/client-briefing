@@ -198,3 +198,22 @@ def test_every_call_is_audited_including_failures(sam):
     assert (ok["user_id"], ok["tool"], ok["args"], ok["result_ids"], ok["error"]) == \
         ("u2", "get_opportunities", {"client_id": "C002"}, ["SQL:opportunities:OPP-HEL-GB"], None)
     assert (failed["result_ids"], failed["error"]) == ([], "client_not_found")
+
+
+def test_tools_are_offered_to_models_in_the_openai_format_without_the_user():
+    specs = {s["function"]["name"]: s for s in tools.openai_tool_specs()}
+    assert set(specs) >= {"get_metrics", "search_documents", "get_data_quality_flags"}
+    assert all(s["type"] == "function" for s in specs.values())
+    params = specs["search_documents"]["function"]["parameters"]
+    assert {"client_id", "query"} <= set(params["properties"]) and params["additionalProperties"] is False
+    assert not any("user" in name or "entitlement" in name for s in specs.values()
+                   for name in s["function"]["parameters"].get("properties", {}))  # never chosen by a model
+
+
+def test_a_models_tool_call_is_validated_filtered_and_audited_like_any_other():
+    sam = tools.load_user("u2")
+    assert tools.call_tool(sam, "drop_tables", "{}").error == "unknown_tool"
+    assert tools.call_tool(sam, "get_metrics", "not json").error == "invalid_input"
+    assert tools.call_tool(sam, "get_opportunities", '{"client_id": "C002", "user_id": "u1"}').error == "invalid_input"
+    result = tools.call_tool(sam, "get_opportunities", '{"client_id": "C002"}')
+    assert result.ok and "OPP-HEL-MA" not in {f.details["opp_id"] for f in result.facts}  # still Sam's view

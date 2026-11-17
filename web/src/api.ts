@@ -54,7 +54,8 @@ export type Section = {
   title: string
   question: string
   bullets: Bullet[]
-  written_by: string // code, mock, a model name, or "evidence (fallback)"
+  written_by: string // code, mock, the model that answered, or "evidence (fallback)"
+  provider: string | null // gemini, openrouter, ollama, mock; null when code wrote it
   author: 'ai' | 'template' | 'code' | 'evidence' // what the label says: AI only when a real model wrote it
   status: 'ok' | 'empty' | 'unavailable' | 'fallback'
   check: Check
@@ -120,7 +121,7 @@ export type Evidence = {
   caveat_id: string | null
 }
 
-export type LLMRun = { provider: string; model: string; cached: boolean; notes: string[] }
+export type LLMRun = { provider: string; model: string; cached: boolean; notes: string[]; seconds: number }
 
 export type Briefing = {
   client_id: string

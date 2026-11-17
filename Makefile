@@ -2,7 +2,7 @@
 # or point at it directly:  make test PYTHON=.venv/Scripts/python
 PYTHON ?= python
 
-.PHONY: data load unify briefing api web test eval eval-real
+.PHONY: data load unify briefing api web test eval eval-real llm-check
 
 # Which briefing `make briefing` prints: CLIENT is an ID, name or alias; USER_ID is u1 or u2.
 # (Not "AS" or "USER": make predefines AS as the assembler, and USER is a shell variable.)
@@ -45,3 +45,7 @@ eval:
 # The same, then again with the LLM in .env (cached answers cost no requests)
 eval-real:
 	$(PYTHON) -m eval.run_eval --real
+
+# Ping each LLM provider (one tiny request each) and print which work
+llm-check:
+	$(PYTHON) -m app.llm_check

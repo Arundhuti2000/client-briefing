@@ -59,7 +59,7 @@ SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 # Flags that are data clean-up, not something to raise at the meeting: shown collapsed,
 # under "Data housekeeping". Conflicts, stale statements and overdue actions stay on top.
 HOUSEKEEPING = {"duplicate_client", "duplicate_contact", "stale", "excluded_source", "unresolved_reference"}
-AI_PROVIDERS = {"gemini", "ollama"}  # only these count as "AI written"; mock is a template
+AI_PROVIDERS = {"gemini", "openrouter", "ollama"}  # only these count as "AI written"; mock is a template
 
 # ---------------------------------------------------------------------------
 # Output shape (also the API response)
@@ -71,7 +71,8 @@ class Section(BaseModel):
     title: str
     question: str
     bullets: list[Bullet] = []
-    written_by: str = "code"            # code, mock, a model name, or "evidence (fallback)"
+    written_by: str = "code"            # code, mock, the model that answered, or "evidence (fallback)"
+    provider: str | None = None         # gemini, openrouter, ollama, mock; None when code wrote it
     author: Literal["ai", "template", "code", "evidence"] = "code"  # for the label people see
     status: str = "ok"                  # ok, empty, unavailable, fallback
     check: Check = Check(passed=True)
@@ -133,6 +134,7 @@ class LLMRun(BaseModel):
     model: str
     cached: bool
     notes: list[str]
+    seconds: float = 0.0                # how long it took, fallbacks included (0 when cached)
 
 
 class Briefing(BaseModel):
@@ -463,35 +465,46 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
     tool_failed = {name for name, r in results.items() if not r.ok}
     to_write = [bundles[name] for name in QUESTIONS
                 if name not in CODE_SECTIONS and name not in tool_failed and bundles[name].evidence]
-    runs, first_checks = [], {}
-    if to_write:
-        completion = llm.write_sections(to_write)
-        runs.append(completion)
+    runs, first_checks, provider_of = [], {}, {}
+
+    def keep_passing(bundles: list[SectionEvidence], completion: llm.Completion, attempt: int):
+        """Validate each section of an answer: keep the ones that pass, return (bundle, check) for the rest."""
         parsed, schema_errors = validate.parse_draft(completion.data)
         failed = []
-        for bundle in to_write:
+        for bundle in bundles:
             check = validate.check_section(parsed.get(bundle.section), bundle, hidden, schema_errors)
             if check.passed:
                 drafts[bundle.section] = parsed[bundle.section].bullets
                 written_by[bundle.section], author[bundle.section] = completion.model, kind_of(completion)
+                provider_of[bundle.section] = completion.provider
             else:
-                failed.append(bundle)
-                first_checks[bundle.section] = check
-                log_rejection(user, bundle.section, 1, check)
-        # 4. Retry the failed sections once, with the errors; then fall back to the evidence itself
-        if failed:
-            retry = llm.write_sections(failed, feedback={b.section: first_checks[b.section].errors for b in failed})
+                failed.append((bundle, check))
+                first_checks.setdefault(bundle.section, check)
+                log_rejection(user, bundle.section, attempt, check)
+        if not failed:
+            llm.mark_validated(completion)  # only answers that fully pass are replayed with CACHE_REPLAY=any
+        return failed
+
+    # 4. Write, validate, and retry failed sections once with the errors on the same provider.
+    #    If they fail again, the next provider in LLM_CHAIN writes them; after the last one,
+    #    a section shows its evidence itself.
+    pending, chain, attempt = to_write, llm.llm_chain(), 0
+    while pending and chain:
+        first = llm.write_sections(pending, chain=chain)
+        runs.append(first)
+        attempt += 1
+        failed = keep_passing(pending, first, attempt)
+        if failed and first.provider in chain:
+            retry = llm.write_sections([b for b, _ in failed], feedback={b.section: c.errors for b, c in failed},
+                                       chain=[first.provider])
             runs.append(retry)
-            parsed, schema_errors = validate.parse_draft(retry.data)
-            for bundle in failed:
-                check = validate.check_section(parsed.get(bundle.section), bundle, hidden, schema_errors)
-                if check.passed:
-                    drafts[bundle.section] = parsed[bundle.section].bullets
-                    written_by[bundle.section], author[bundle.section] = retry.model, kind_of(retry)
-                else:
-                    log_rejection(user, bundle.section, 2, check)
-                    drafts[bundle.section] = llm.evidence_bullets(bundle)
-                    written_by[bundle.section], author[bundle.section] = "evidence (fallback)", "evidence"
+            attempt += 1
+            failed = keep_passing([b for b, _ in failed], retry, attempt)
+        pending = [b for b, _ in failed]
+        chain = chain[chain.index(first.provider) + 1:] if first.provider in chain else []
+    for bundle in pending:
+        drafts[bundle.section] = llm.evidence_bullets(bundle)
+        written_by[bundle.section], author[bundle.section] = "evidence (fallback)", "evidence"
 
     # Full names, whoever wrote the bullet: "Raj said" -> "Raj Patel said"
     people = [f.value for f in facts["client_overview"] if f.source in ("contacts", "coverage")]
@@ -509,6 +522,7 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
             section.status, section.note = "empty", "Nothing on file for this question."
         else:
             section.bullets, section.written_by, section.author = drafts[name], written_by[name], author[name]
+            section.provider = provider_of.get(name)
             section.check = validate.check_section(SectionDraft(section=name, bullets=drafts[name]), bundles[name], hidden)
             if name in first_checks:
                 section.retry_errors = first_checks[name].errors
@@ -550,7 +564,8 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
                        severity=f.details["severity"], housekeeping=f.label in HOUSEKEEPING, detail=f.value, source_ids=f.details["source_ids"],
                        evidence_id=f.evidence_id) for f in flags],
         evidence={e.evidence_id: e for e in all_evidence},
-        llm_runs=[LLMRun(provider=r.provider, model=r.model, cached=r.cached, notes=r.notes) for r in runs],
+        llm_runs=[LLMRun(provider=r.provider, model=r.model, cached=r.cached, notes=r.notes, seconds=r.seconds)
+                  for r in runs],
         generated_ms=round((time.perf_counter() - started) * 1000),
     )
 
@@ -585,7 +600,8 @@ def to_markdown(b: Briefing) -> str:
         lines += [f"## What changed since {long_date(b.last_interaction)}",
                   *[f"- {c.text} {cite(c.evidence_ids)}" for c in b.what_changed], ""]
     for s in b.sections:
-        lines += [f"## {s.title}", f"_{AUTHOR_LABELS[s.author]}_", ""]
+        label = AUTHOR_LABELS[s.author] + (f" ({s.provider}: {s.written_by})" if s.author == "ai" else "")
+        lines += [f"## {s.title}", f"_{label}_", ""]
         if s.note:
             lines += [f"> {s.note}", ""]
         if s.retry_note:
@@ -613,7 +629,8 @@ def llm_summary(b: Briefing) -> str:
     """Which model wrote the briefing (and how many calls), and why it fell back if it did."""
     if not b.llm_runs:
         return "none"
-    used = Counter(f"{'template (no AI)' if r.provider == 'mock' else r.model}{' (cached)' if r.cached else ''}"
+    used = Counter(f"{'template (no AI)' if r.provider == 'mock' else f'{r.provider}: {r.model}'}"
+                   f"{' (cached)' if r.cached else ''}"
                    for r in b.llm_runs)
     text = ", ".join(f"{model} x{n}" if n > 1 else model for model, n in used.items())
     notes = list(dict.fromkeys(note for r in b.llm_runs for note in r.notes))  # unique, in order
