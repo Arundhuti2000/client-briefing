@@ -1,0 +1,7 @@
+contact_id,client_id,name,title,relationship_role,email,last_contact_date,updated_at
+CT101,C101,Grace Okoro,CFO,Decision maker,grace.okoro@cobaltridge.com,10/27/2026,09/10/2026
+CT103,C101,Tomas Silva,Treasurer,Day-to-day,Tomas.Silva@CobaltRidge.com,04/02/2026,04/02/2026
+CT110,C102,Viktor Lund,CFO,Decision maker,viktor.lund@meridianbio.com,10/06/2026,08/11/2026
+CT102,C101,Tomas Silva,Treasurer,Day-to-day,tomas.silva@cobaltridge.com,10/19/2026,10/19/2026
+CT111,C102,Amara Diallo,Head of Treasury,Day-to-day,amara.diallo@meridianbio.com,10/16/2026,10/16/2026
+CT104,C115,Hannah Weiss,COO,Influencer,hannah.weiss@cobaltridge.com,12/05/2023,12/05/2023

@@ -16,7 +16,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 
-from app import ask, audit, db, orchestrator, retrieval, tools
+from app import ask, audit, db, orchestrator, retrieval, tools, workflow
 from app.orchestrator import Briefing, BriefingError
 from app.tasks import Task, TaskError, TaskRequest, create_task
 from app.tools import ClientId, Fact, UserContext
@@ -205,6 +205,42 @@ def ask_follow_up(client_id: str, body: AskRequest, user: CurrentUser):
     if not question:
         raise HTTPException(status_code=422, detail="Type a question.")
     return ask.answer(user, canonical, question)
+
+
+def canonical_or_404(client_id: str) -> str:
+    with closing(db.connect()) as conn:
+        canonical = db.canonical_client_id(conn, client_id)
+    if canonical is None:
+        raise HTTPException(status_code=404, detail="Client not found.")
+    return canonical
+
+
+WORKFLOW_STATUS = {"not_found": 404, "invalid": 422, "conflicts_open": 409}
+
+
+@app.get("/briefings/{client_id}/workflow", response_model=workflow.WorkflowState)
+def workflow_state(client_id: str, user: CurrentUser):
+    """This user's saved conflict decisions, how many are still open, and the latest share."""
+    return workflow.state(user, canonical_or_404(client_id))
+
+
+@app.post("/briefings/{client_id}/decisions", response_model=workflow.Decision)
+def save_decision(client_id: str, body: workflow.DecisionRequest, user: CurrentUser):
+    """Store which source the banker trusts for one conflict (only conflicts this user may see)."""
+    try:
+        return workflow.save_decision(user, canonical_or_404(client_id), body)
+    except workflow.WorkflowError as e:
+        raise HTTPException(status_code=WORKFLOW_STATUS[e.code], detail=e.message)
+
+
+@app.post("/briefings/{client_id}/share", response_model=workflow.ShareRecord, status_code=201)
+def share_briefing(client_id: str, body: workflow.ShareRequest, user: CurrentUser):
+    """Approve and share: blocked (409) while conflicts are open; recipients from the coverage
+    team; creates the follow-up tasks; audited."""
+    try:
+        return workflow.share(user, canonical_or_404(client_id), body)
+    except workflow.WorkflowError as e:
+        raise HTTPException(status_code=WORKFLOW_STATUS[e.code], detail=e.message)
 
 
 @app.get("/sources/{evidence_id:path}", response_model=Fact)

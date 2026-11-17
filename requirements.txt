@@ -1,5 +1,6 @@
 google-genai
 openai
+mcp
 pydantic
 rank_bm25
 rapidfuzz

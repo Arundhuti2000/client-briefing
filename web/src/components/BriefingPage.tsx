@@ -1,9 +1,9 @@
 // The briefing workspace: header, the four steps (Gather, Check, Read, Share), and the
 // step on screen. The briefing itself comes from POST /briefings; this file only adds
 // the banker's workflow on top (decisions, approval, follow-up tasks).
-import { useState } from 'react'
-import { createTask } from '../api'
-import type { Briefing, ClientSummary, Task } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { getWorkflow, saveDecision, shareBriefing } from '../api'
+import type { Briefing, ClientSummary, ShareRecord } from '../api'
 import { count, countdown, errorMessage, initials, shortDate, weekdayDate } from '../format'
 import type { Progress } from '../progress'
 import { suggestedFollowUps } from '../workflow'
@@ -40,9 +40,47 @@ function readingMinutes(b: Briefing): number {
 export function BriefingPage(props: Props) {
   const { userId, summary, briefing: b, loading, error, step, progress, onStep, onProgress } = props
   const [ticks, setTicks] = useState<Record<string, boolean>>({}) // follow-ups the banker (un)ticked
-  const [created, setCreated] = useState<Task[]>([])
+  const [record, setRecord] = useState<ShareRecord | null>(null) // the saved share (approver, recipients, time, tasks)
+  const [saved, setSaved] = useState<Record<string, string>>({}) // conflict flag -> when the decision was saved
+  const [recipients, setRecipients] = useState<string[] | null>(null) // null: the whole coverage team
+  const [checkError, setCheckError] = useState<string | null>(null)
   const [shareError, setShareError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const team = b ? b.coverage.map((c) => c.replace(/ \(.*\)$/, '')) : []
+
+  // What the API has saved for this briefing: decisions and the latest share. The latest
+  // onProgress is kept in a ref, so a new callback from the parent doesn't refetch.
+  const onProgressRef = useRef(onProgress)
+  useEffect(() => {
+    onProgressRef.current = onProgress
+  })
+  useEffect(() => {
+    if (!b) return
+    let cancelled = false
+    getWorkflow(userId, b.client_id)
+      .then((w) => {
+        if (cancelled) return
+        setSaved(Object.fromEntries(w.decisions.map((d) => [d.flag_id, d.decided_at])))
+        setRecord(w.share)
+        onProgressRef.current({ decisions: Object.fromEntries(w.decisions.map((d) => [d.flag_id, d.source_id])), approved: !!w.share })
+      })
+      .catch(() => undefined) // offline: the steps still work from this browser's progress
+    return () => {
+      cancelled = true
+    }
+  }, [b, userId]) // run when the briefing or the user changes
+
+  async function decide(flagId: string, sourceId: string) {
+    if (!b) return
+    setCheckError(null)
+    try {
+      const d = await saveDecision(userId, b.client_id, flagId, sourceId)
+      setSaved((all) => ({ ...all, [flagId]: d.decided_at }))
+      onProgress({ decisions: { ...progress.decisions, [flagId]: sourceId } })
+    } catch (e) {
+      setCheckError(errorMessage(e))
+    }
+  }
 
   const conflicts = b?.flags.filter((f) => f.flag_type === 'conflict') ?? []
   const open = conflicts.filter((f) => !progress.decisions[f.evidence_id]).length
@@ -54,12 +92,12 @@ export function BriefingPage(props: Props) {
     setBusy(true)
     setShareError(null)
     try {
-      const made: Task[] = []
-      for (const f of followUps.filter((x) => isTicked(x.key, x.defaultOn))) {
-        // one at a time: task IDs are numbered in order by the API
-        made.push(await createTask(userId, { client_id: b.client_id, description: f.description, due_date: b.meeting_date, source_id: f.sourceId }))
-      }
-      setCreated(made)
+      const ticked = followUps.filter((x) => isTicked(x.key, x.defaultOn))
+      const r = await shareBriefing(userId, b.client_id, {
+        recipients: recipients ?? team,
+        follow_ups: ticked.map((f) => ({ description: f.description, source_id: f.sourceId })),
+      })
+      setRecord(r)
       onProgress({ approved: true })
     } catch (e) {
       setShareError(errorMessage(e))
@@ -204,7 +242,7 @@ export function BriefingPage(props: Props) {
       )}
       {b && step === 'gather' && <GatherStep briefing={b} />}
       {b && step === 'check' && (
-        <CheckStep briefing={b} progress={progress} onDecide={(flagId, sourceId) => onProgress({ decisions: { ...progress.decisions, [flagId]: sourceId } })} />
+        <CheckStep briefing={b} progress={progress} saved={saved} error={checkError} onDecide={decide} />
       )}
       {b && step === 'read' && <ReadStep briefing={b} userId={userId} progress={progress} />}
       {b && step === 'share' && (
@@ -215,7 +253,10 @@ export function BriefingPage(props: Props) {
           followUps={followUps}
           isTicked={isTicked}
           onTick={(key, on) => setTicks((t) => ({ ...t, [key]: on }))}
-          created={created}
+          record={record}
+          team={team}
+          recipients={recipients ?? team}
+          onRecipients={setRecipients}
           error={shareError}
         />
       )}

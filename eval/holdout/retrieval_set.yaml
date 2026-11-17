@@ -1,0 +1,15 @@
+# Retrieval set for the held-out dataset. Review and correct the labels by hand.
+- {client: C101, user: u2, question: "Who will attend the August planning session?", relevant: [email_101]}
+- {client: C101, user: u2, question: "What did the client commit to on commodity hedging?", relevant: [note_101]}
+- {client: C101, user: u2, question: "Did Tomas Silva ask for a fuel hedging analysis?", relevant: [note_101]}
+- {client: C101, user: u2, question: "Can trade finance fund the electric truck fleet?", relevant: [note_102, research_101, brief_101]}
+- {client: C101, user: u2, question: "When are the beneficial ownership forms due?", relevant: [email_103]}
+- {client: C101, user: u2, question: "What does Grace Okoro want to review before we meet?", relevant: [email_104]}
+- {client: C101, user: u2, question: "How many electric trucks did they add?", relevant: [news_101]}
+- {client: C101, user: u2, question: "What revenue did the February briefing report?", relevant: [brief_101]}
+- {client: C102, user: u2, question: "What are Meridian's plans for payment operations?", relevant: [note_104]}
+- {client: C102, user: u2, question: "Who handles day-to-day treasury at Meridian?", relevant: [brief_102, note_104]}
+- {client: C102, user: u2, question: "How are mid-stage biotechs funding themselves?", relevant: [research_102]}
+- {client: C102, user: u2, question: "Did they report trial results?", relevant: [news_102]}
+- {client: C102, user: u1, question: "What is Project Lantern?", relevant: [note_103]}
+- {client: C102, user: u2, question: "What is Project Lantern?", relevant: []}

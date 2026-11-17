@@ -175,7 +175,8 @@ def test_the_ask_endpoint(monkeypatch):
 def test_answers_lead_with_what_was_asked_and_use_full_names(monkeypatch, sam):
     no_llm(monkeypatch)
     cfo = ask.answer(sam, "C001", "Who is the CFO?")
-    assert cfo.bullets[0].text.startswith("Raj Patel is the CFO")  # not the coverage bankers first
+    assert cfo.bullets[0].text.startswith("Raj Patel is the CFO")
+    assert len(cfo.bullets) == 2 and "Who is the CFO?" in cfo.bullets[1].text  # only what mentions the CFO
     scripted_llm(monkeypatch, [])
     said = ask.answer(sam, "C001", "What did Raj Patel say about FX hedging?")
     assert any(b.text.startswith("Raj Patel said the client has committed") for b in said.bullets)  # not "Raj said"

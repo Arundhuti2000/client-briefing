@@ -135,6 +135,9 @@ class LLMRun(BaseModel):
     cached: bool
     notes: list[str]
     seconds: float = 0.0                # how long it took, fallbacks included (0 when cached)
+    requests: int = 0                   # API requests it cost (0 when cached or the template)
+    tokens_in: int = 0
+    tokens_out: int = 0
 
 
 class Briefing(BaseModel):
@@ -564,7 +567,8 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
                        severity=f.details["severity"], housekeeping=f.label in HOUSEKEEPING, detail=f.value, source_ids=f.details["source_ids"],
                        evidence_id=f.evidence_id) for f in flags],
         evidence={e.evidence_id: e for e in all_evidence},
-        llm_runs=[LLMRun(provider=r.provider, model=r.model, cached=r.cached, notes=r.notes, seconds=r.seconds)
+        llm_runs=[LLMRun(provider=r.provider, model=r.model, cached=r.cached, notes=r.notes, seconds=r.seconds,
+                         requests=r.requests, tokens_in=r.tokens_in, tokens_out=r.tokens_out)
                   for r in runs],
         generated_ms=round((time.perf_counter() - started) * 1000),
     )

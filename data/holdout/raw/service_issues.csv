@@ -1,0 +1,3 @@
+issue_id,client_id,summary,severity,status,opened,closed
+SI-102,C101,Statement export missing reference field,LOW,CLOSED,11/05/2026,29/05/2026
+SI-101,C102,Wire confirmations arriving a day late,Medium,Open,05/10/2026,

@@ -1,0 +1,5 @@
+action_id,client_id,description,owner,due_date,status,source_doc_id
+A-102,C101,Book a depot site visit,Maya Chen,"Dec 2, 2026",open,email_104
+A-103,C115,Refresh beneficial ownership forms,Leo Park,"Dec 10, 2026",OPEN,email_103
+A-101,C101,Send fuel hedging analysis to Tomas Silva,Leo Park,"Oct 28, 2026",Open,note_101
+A-104,C102,Share the payments roadmap,Priyanka Rao,"Nov 24, 2026",Open,note_104

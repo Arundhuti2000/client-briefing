@@ -1,0 +1,3 @@
+user_id,name,role,entitlements
+u2,Leo Park,Analyst,standard
+u1,Maya Chen,Coverage director,standard;restricted_deals

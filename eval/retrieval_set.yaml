@@ -1,0 +1,34 @@
+# Retrieval set (dev data): a question, the client, who asks, and the documents that answer it.
+# Labels are hand-made from the documents' text; review and correct them by hand.
+# An empty `relevant` list means nothing should be found for that user (only the
+# restricted-document check applies).
+- {client: C001, user: u2, question: "What did the client commit to on FX hedging?", relevant: [note_001, note_003]}
+- {client: C001, user: u2, question: "Who said Dana Lee is the CFO?", relevant: [email_001]}
+- {client: C001, user: u2, question: "When is the July call and who joins it?", relevant: [email_001]}
+- {client: C001, user: u2, question: "Is there an updated cash forecast for Q4?", relevant: [email_002]}
+- {client: C001, user: u2, question: "Did the client ask for a treasury management workshop?", relevant: [email_003]}
+- {client: C001, user: u2, question: "What do they want to know about a liquidity sweep?", relevant: [email_003]}
+- {client: C001, user: u2, question: "When are the KYC documents due?", relevant: [email_004]}
+- {client: C001, user: u2, question: "What does the client want to cover at the November meeting?", relevant: [email_005]}
+- {client: C001, user: u2, question: "Do they want to upsize the credit facility?", relevant: [note_002, note_001, email_005]}
+- {client: C001, user: u2, question: "What did Priya Shah ask for?", relevant: [note_002, note_001]}
+- {client: C001, user: u2, question: "What are their plans for European credit funds?", relevant: [note_003, news_001, research_001]}
+- {client: C001, user: u2, question: "Did they close a new fund?", relevant: [news_001]}
+- {client: C001, user: u2, question: "Are they opening an office in London?", relevant: [news_002]}
+- {client: C001, user: u2, question: "What revenue did the last briefing report?", relevant: [brief_001]}
+- {client: C001, user: u2, question: "How are asset managers using FX hedging in Europe?", relevant: [research_001]}
+- {client: C001, user: u2, question: "What was discussed at the quarterly review in September?", relevant: [note_001]}
+- {client: C002, user: u2, question: "Why do supplier payments miss the same-day window?", relevant: [email_006]}
+- {client: C002, user: u2, question: "How large is the planned green bond?", relevant: [note_005, research_002, brief_003]}
+- {client: C002, user: u2, question: "What did Marcus Webb discuss with us in October?", relevant: [note_005]}
+- {client: C002, user: u1, question: "Is the board considering an acquisition?", relevant: [note_004]}
+- {client: C002, user: u1, question: "What is Project Sunrise?", relevant: [note_004]}
+- {client: C002, user: u2, question: "Is the board considering an acquisition?", relevant: []}
+- {client: C002, user: u2, question: "How did Helios do on solar output?", relevant: [news_004]}
+- {client: C002, user: u2, question: "What were the focus areas in the last Helios briefing?", relevant: [brief_003]}
+- {client: C002, user: u2, question: "Can renewables be funded with green bonds?", relevant: [research_002, note_005]}
+- {client: C003, user: u2, question: "Why are ACH payment files being rejected?", relevant: [note_006, email_007]}
+- {client: C003, user: u2, question: "When will the ACH file format be fixed?", relevant: [email_007, note_006]}
+- {client: C003, user: u2, question: "Is Arbor Health opening new clinics?", relevant: [news_006]}
+- {client: C003, user: u2, question: "Who is the day-to-day treasury contact?", relevant: [brief_002, note_006]}
+- {client: C003, user: u2, question: "Are hospital systems consolidating their banking?", relevant: [research_003]}

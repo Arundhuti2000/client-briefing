@@ -1,8 +1,8 @@
 // Step 4, Share: the validator's results as plain checks, the follow-ups to create
 // (POST /tasks, on Approve), and the briefing as a file (the Markdown the API returns).
 import { useState } from 'react'
-import type { Briefing, Task } from '../api'
-import { count } from '../format'
+import type { Briefing, ShareRecord } from '../api'
+import { count, dateTime } from '../format'
 import type { Progress } from '../progress'
 import type { FollowUp } from '../workflow'
 import { Check, CircleAlert } from 'lucide-react'
@@ -16,11 +16,15 @@ type Props = {
   followUps: FollowUp[]
   isTicked: (key: string, defaultOn: boolean) => boolean
   onTick: (key: string, on: boolean) => void
-  created: Task[]
+  record: ShareRecord | null // what the API saved when the briefing was shared
+  team: string[] // the client's coverage team
+  recipients: string[]
+  onRecipients: (names: string[]) => void
   error: string | null
 }
 
-export function ShareStep({ briefing: b, progress, open, followUps, isTicked, onTick, created, error }: Props) {
+export function ShareStep(props: Props) {
+  const { briefing: b, progress, open, followUps, isTicked, onTick, record, team, recipients, onRecipients, error } = props
   const [copied, setCopied] = useState(false)
   const bullets = b.sections.flatMap((s) => s.bullets)
   const checked = b.sections.filter((s) => s.check.passed).flatMap((s) => s.bullets)
@@ -61,9 +65,15 @@ export function ShareStep({ briefing: b, progress, open, followUps, isTicked, on
             <Check size={16} strokeWidth={3} aria-hidden="true" />
           </span>
           <div className="stack">
-            <span className="h3">{created.length ? `Approved · ${count(created.length, 'follow-up')} created` : 'Approved'}</span>
+            <span className="h3">
+              {record
+                ? `Shared with ${`${record.recipients.length} ${record.recipients.length === 1 ? 'person' : 'people'}`} · ${count(record.task_ids.length, 'follow-up')} created`
+                : 'Approved'}
+            </span>
             <span className="note" style={{ color: 'var(--good-ink)' }}>
-              Follow-ups are saved as tasks and in the audit log. Download the briefing to take it with you.
+              {record
+                ? `Approved by ${record.approver_name} on ${dateTime(record.shared_at)} for ${record.recipients.join(', ')}. Saved, with the tasks, in the audit log.`
+                : 'Follow-ups are saved as tasks and in the audit log.'}
             </span>
           </div>
         </div>
@@ -111,7 +121,33 @@ export function ShareStep({ briefing: b, progress, open, followUps, isTicked, on
           </section>
         </div>
 
-        <section className="panel panel-pad col-narrow" aria-labelledby="s-export">
+        <div className="col-narrow" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <section className="panel panel-pad" aria-labelledby="s-send" style={{ gap: 4 }}>
+          <h3 id="s-send" className="h3">
+            Send to
+          </h3>
+          <p className="sub" style={{ marginBottom: 8 }}>
+            The client's coverage team. Each person sees only what they are cleared for.
+          </p>
+          {team.map((name) => (
+            <label key={name} htmlFor={`to-${name}`} className="tick-row">
+              <span className="avatar" aria-hidden="true" style={{ flex: '0 0 32px' }}>
+                {name.split(' ').map((w) => w[0]).join('').slice(0, 2)}
+              </span>
+              <span>
+                <span style={{ fontWeight: 500 }}>{name}</span>
+                <span className="small muted">{b.coverage.find((c) => c.startsWith(name))?.replace(name, '').replace(/[()]/g, '').trim()}</span>
+              </span>
+              <Checkbox
+                id={`to-${name}`}
+                checked={recipients.includes(name)}
+                disabled={progress.approved}
+                onCheckedChange={(on) => onRecipients(on === true ? [...recipients, name] : recipients.filter((r) => r !== name))}
+              />
+            </label>
+          ))}
+        </section>
+        <section className="panel panel-pad" aria-labelledby="s-export">
           <h3 id="s-export" className="h3">
             Take it with you
           </h3>
@@ -129,6 +165,7 @@ export function ShareStep({ briefing: b, progress, open, followUps, isTicked, on
           </div>
           <span className="small muted">Internal only. It holds only what {b.prepared_for} is cleared to see.</span>
         </section>
+        </div>
       </div>
     </div>
   )

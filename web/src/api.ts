@@ -34,8 +34,30 @@ export type ClientSummary = {
 // The last `make eval` scorecard (GET /evaluations): counts and statuses, never failure text
 export type EvalCheck = { name: string; measures: string; result: string; target: string; passed: boolean; zero_tolerance: boolean }
 export type EvalTrap = { trap_id: string; what: string; checks: string[]; status: 'PASS' | 'FAIL' | 'not checked' }
-export type EvalRun = { provider: string; cases: number; models: string; checks: EvalCheck[]; latency: string; traps: EvalTrap[] }
-export type EvalReport = { ran_at: string; runs: EvalRun[] }
+export type EvalRun = {
+  provider: string
+  dataset?: 'dev' | 'holdout'
+  cases: number
+  models: string
+  checks: EvalCheck[]
+  latency: string
+  cost?: { requests: number; tokens_in: number; tokens_out: number; cache_hits: number }
+  traps: EvalTrap[]
+}
+export type RetrievalScores = { 'precision@5': number; 'recall@5': number; mrr: number; 'ndcg@5': number }
+export type RetrievalReport = { questions: number; scored: number; methods: Record<string, RetrievalScores>; restricted_retrieved: number }
+export type DetectorReport = {
+  cases: number; precision: number; recall: number; f1: number; false_positives: string[]; false_negatives: string[]
+}
+export type QualityReport = {
+  retrieval: Record<string, RetrievalReport> // dev, holdout
+  detectors: Record<string, { cases: number; detectors: Record<string, DetectorReport> }>
+  router: { questions: number; accuracy: number; routes: string[]; confusion: number[][]; misroutes: string[] }
+  faithfulness: Record<string, { claims: number; supported: number; faithfulness: number | null; llm_sections: number;
+    first_drafts_rejected: number; rejection_rate: number | null; unsupported: string[] }>
+  note: string[]
+}
+export type EvalReport = { ran_at: string; runs: EvalRun[]; holdout_runs?: EvalRun[]; quality?: QualityReport }
 
 export type ResolveResponse = {
   query: string
@@ -248,6 +270,36 @@ export const askFollowUp = (userId: string, clientId: string, question: string) 
   request<Answer>(`/briefings/${encodeURIComponent(clientId)}/ask`, userId, {
     method: 'POST',
     body: JSON.stringify({ question }),
+  })
+
+// Conflict decisions and sharing (app/workflow.py)
+export type Decision = { flag_id: string; source_id: string; decided_at: string }
+export type ShareRecord = {
+  share_id: string
+  client_id: string
+  approver: string
+  approver_name: string
+  recipients: string[]
+  shared_at: string
+  task_ids: string[]
+  tasks: Task[]
+}
+export type WorkflowState = { decisions: Decision[]; open_conflicts: number; share: ShareRecord | null }
+export type ShareBody = { recipients: string[]; follow_ups: { description: string; source_id: string | null }[] }
+
+export const getWorkflow = (userId: string, clientId: string) =>
+  request<WorkflowState>(`/briefings/${encodeURIComponent(clientId)}/workflow`, userId)
+
+export const saveDecision = (userId: string, clientId: string, flagId: string, sourceId: string) =>
+  request<Decision>(`/briefings/${encodeURIComponent(clientId)}/decisions`, userId, {
+    method: 'POST',
+    body: JSON.stringify({ flag_id: flagId, source_id: sourceId }),
+  })
+
+export const shareBriefing = (userId: string, clientId: string, body: ShareBody) =>
+  request<ShareRecord>(`/briefings/${encodeURIComponent(clientId)}/share`, userId, {
+    method: 'POST',
+    body: JSON.stringify(body),
   })
 
 export const getSource = (userId: string, evidenceId: string) =>

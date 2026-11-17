@@ -135,15 +135,20 @@ def code_answer_facts(user: UserContext, client_id: str, route: str) -> tuple[li
     return facts, [Bullet(text=orchestrator.describe(f), citations=[f.evidence_id]) for f in facts], called
 
 
-QUESTION_STOPWORDS = {"who", "what", "which", "when", "where", "why", "how", "is", "are", "was", "the", "a", "an", "of",
-                      "do", "does", "did", "any", "anything", "there", "their", "them", "they", "we", "our", "us",
-                      "about", "with", "since", "for", "to", "in", "on", "and", "or", "it", "this", "that"}
+GENERIC_KEYWORDS = {"who is", "who are", "how much", "metric", "metrics", "numbers", "figures"}
 
 
-def most_relevant_first(question: str, bullets: list[Bullet]) -> list[Bullet]:
-    """Bullets that use the question's own words first ("Who is the CFO?" -> the CFO), order kept otherwise."""
-    words = {w for w in re.findall(r"[a-z0-9]+", question.lower()) if w not in QUESTION_STOPWORDS and len(w) > 2}
-    return sorted(bullets, key=lambda b: not words & set(re.findall(r"[a-z0-9]+", b.text.lower())))
+def words_of(text: str) -> str:
+    return f" {re.sub(r'[^a-z0-9&-]+', ' ', text.lower())} "
+
+
+def about_the_question(question: str, route: str, bullets: list[Bullet]) -> list[Bullet]:
+    """When the question names something the route knows ("cfo", "revenue", "overdue"), only
+    the bullets that mention it; otherwise all of them ("Which deals are live?")."""
+    asked = words_of(question)
+    named = [k for k in router.BY_NAME[route].keywords if k not in GENERIC_KEYWORDS and f" {k} " in asked]
+    picked = [b for b in bullets if any(f" {k} " in words_of(b.text) for k in named)]
+    return picked or bullets
 
 
 def with_full_names(user: UserContext, client_id: str, question: str, result: Answer) -> Answer:
@@ -160,7 +165,7 @@ def with_full_names(user: UserContext, client_id: str, question: str, result: An
 
 def answer_with_code(user: UserContext, client_id: str, question: str, route: str, base: dict) -> Answer:
     facts, bullets, called = code_answer_facts(user, client_id, route)
-    bullets = most_relevant_first(question, bullets)[:MAX_BULLETS]
+    bullets = about_the_question(question, route, bullets)[:MAX_BULLETS]
     evidence = to_evidence(facts)
     return Answer(**base, status="answered", answered_by="code", tools_called=called, bullets=bullets,
                   evidence=evidence, check=checked(user, question, bullets, evidence),

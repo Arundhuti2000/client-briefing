@@ -1,0 +1,31 @@
+{
+  "brief_101": [
+    {
+      "type": "metric",
+      "metric": "revenue_usd",
+      "value": 2100000
+    }
+  ],
+  "email_101": [
+    {
+      "type": "contact_role",
+      "role": "CFO",
+      "name": "Nina Brooks"
+    }
+  ],
+  "note_101": [
+    {
+      "type": "commitment",
+      "product": "Commodity Hedging",
+      "amount_usd": 30000000,
+      "due": "2027-03-31"
+    }
+  ],
+  "note_104": [
+    {
+      "type": "contact_role",
+      "role": "CFO",
+      "name": "Viktor Lund"
+    }
+  ]
+}

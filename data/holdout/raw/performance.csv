@@ -1,0 +1,3 @@
+client_id,product,metric,value,period,as_of
+C101,Payments,payment_volume_usd,640000000,2026Q2,2026-07-12
+C101,Payments,payment_volume_usd,710000000,2026Q3,2026-10-12

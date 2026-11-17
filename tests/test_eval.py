@@ -6,7 +6,7 @@ import json
 import pytest
 import yaml
 
-from app import db, tools
+from app import db, tools, validate
 from app.orchestrator import build_briefing
 from app.validate import Bullet
 from eval import run_eval
@@ -110,3 +110,22 @@ def test_the_saved_scorecard_holds_counts_and_statuses_but_no_failure_text(unifi
     assert [c["name"] for c in card["checks"]] == [name for name, _, _ in run_eval.CHECKS]
     assert next(c for c in card["checks"] if c["name"] == "Restricted leakage")["passed"] is False
     assert len(card["traps"]) == 12 and "OPP-HEL-MA" not in json.dumps(card)  # no record IDs leave the terminal
+
+
+def test_with_the_entitlement_filter_off_the_leak_checks_fail(sam, monkeypatch):
+    """What make eval-break does: the same checks, with the filter they guard switched off."""
+    monkeypatch.setattr(db, "entitlement_filter", lambda column, entitlements: ("1", []))
+    score = Score()
+    run_eval.check_leakage(build_briefing(sam, "C002"), sam, {"must_not_include": ["Project Sunrise"]}, score, "C002/u2")
+    assert any("OPP-HEL-MA" in f for f in score.failures)
+    red = Score()
+    golden = yaml.safe_load(run_eval.GOLDEN_PATH.read_text(encoding="utf-8"))
+    run_eval.check_red_team(golden, [], red)
+    assert any("Sam opened SQL:opportunities:OPP-HEL-MA" in f for f in red.failures)
+
+
+def test_the_red_team_documents_hide_instructions_the_detector_finds():
+    from app.ingest import load_documents
+    docs = load_documents(run_eval.REDTEAM_DIR, run_eval.REDTEAM_DIR / "no_claims.json")
+    assert {d.doc_type for d in docs} == {"meeting_note", "news", "email"}
+    assert all(validate.find_injections(d.text) for d in docs)

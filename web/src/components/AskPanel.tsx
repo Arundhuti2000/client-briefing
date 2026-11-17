@@ -1,5 +1,5 @@
 // "Ask a follow-up": a question about this client, routed and answered by the API
-// (POST /briefings/{client_id}/ask). Under each answer: the route, how it was chosen,
+// (POST /briefings/{client_id}/ask), shown as the Read step's last section. Under each answer: the route, how it was chosen,
 // the tools called, and who wrote it.
 import { useState } from 'react'
 import type { FormEvent } from 'react'
@@ -88,13 +88,8 @@ export function AskPanel({ briefing: b, userId, answers, onAnswer, cite }: Props
   }
 
   return (
-    <section className="panel panel-pad" aria-labelledby="ask-title">
-      <div className="panel-head">
-        <h3 id="ask-title" className="h3">
-          Ask a follow-up
-        </h3>
-        <span className="sub">Same tools, access rules and checks as the briefing</span>
-      </div>
+    <div className="ask">
+      <span className="sub">Same tools, access rules and checks as the briefing. Newest answer first.</span>
       <form className="ask-form" onSubmit={submit}>
         <label className="sr-only" htmlFor="ask-input">
           Your question about {b.client_name}
@@ -115,6 +110,6 @@ export function AskPanel({ briefing: b, userId, answers, onAnswer, cite }: Props
       {answers.map((a, i) => (
         <AnswerCard key={answers.length - i} answer={a} cite={cite} />
       ))}
-    </section>
+    </div>
   )
 }

@@ -12,20 +12,10 @@ import { AskPanel } from './AskPanel'
 import { SourcePanel } from './SourcePanel'
 import { AuthorTag, BulletList, BulletText, CiteChips, SectionNotes, SourceIcon, StatusText, Tag } from './common'
 import { Button } from '@/components/ui/button'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Tone } from './common'
 
 type Props = { briefing: Briefing; userId: string; progress: Progress }
-
-const TOC: [string, string][] = [
-  ['r-summary', 'In 30 seconds'],
-  ['r-who', 'Who they are'],
-  ['r-changed', 'What changed'],
-  ['r-asks', 'Asks and promises'],
-  ['r-numbers', 'Numbers'],
-  ['r-opps', 'What to bring up'],
-  ['r-news', 'In the news'],
-  ['r-watch', 'Watch out for'],
-]
 
 const STAGE_TONE: Record<string, Tone> = { Negotiation: 'indigo', Proposal: 'good' }
 
@@ -83,6 +73,7 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
     [b, answers],
   )
   const [selected, setSelected] = useState<string | null>(null)
+  const [current, setCurrent] = useState(0) // the section on screen
   const [agendaEdits, setAgendaEdits] = useState<Record<string, boolean>>({}) // opportunity -> on/off agenda
   const cite: Cite = {
     number: (id) => numbers.get(id) ?? 0,
@@ -113,58 +104,16 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
       .map((o) => ({ text: `Discuss ${o.product} (${o.stage}, estimated ${o.value}).`, citations: [o.evidence_id] })),
   ]
 
-  return (
-    <>
-    <AskPanel
-      briefing={b}
-      userId={userId}
-      answers={answers}
-      onAnswer={(a) => setAnswers((all) => [a, ...all])}
-      cite={cite}
-    />
-    <div className="read">
-      <nav className="toc" aria-label="Briefing contents">
-        <span className="small muted" style={{ padding: '0 10px 8px' }}>
-          On this page
-        </span>
-        {TOC.map(([id, label]) => (
-          <a key={id} href={`#${id}`}>
-            {label}
-          </a>
-        ))}
-      </nav>
-
-      <article className="panel article">
-        <section id="r-summary" aria-labelledby="h-summary">
-          <h3 id="h-summary" className="kicker">
-            In 30 seconds
-          </h3>
-          <ul className="summary">
-            {summary(b).map((line, i) => (
-              <li key={i}>{line}</li>
-            ))}
-          </ul>
-          <div className="hints">
-            <span>
-              <span className="cite" style={{ marginLeft: 0 }} aria-hidden="true">
-                <SourceIcon source="email" size={10} />2
-              </span>
-              Click a number to see the source
-            </span>
-            <span>
-              <span className="mono" style={{ fontWeight: 600, color: 'var(--text)' }} aria-hidden="true">
-                $
-              </span>
-              Figures come from SQL, formatted by code, never by AI
-            </span>
-          </div>
-        </section>
-
-        <section id="r-who" aria-labelledby="h-who">
-          <div className="sec-head">
-            <h3 id="h-who">Who they are</h3>
-            <AuthorTag section={s('client_overview')} />
-          </div>
+  // The sections, one shown at a time: title in the list, a count beside it, and the body
+  type Part = { id: string; nav: string; title: ReactNode; meta: string; tone?: Tone; tag?: ReactNode; body: ReactNode }
+  const overdue = b.actions.filter((a) => a.overdue).length
+  const picked = live.filter((o) => onAgenda(o.evidence_id)).length
+  const parts: Part[] = [
+    {
+      id: 'who', nav: 'Who they are', title: 'Who they are', tag: <AuthorTag section={s('client_overview')} />,
+      meta: count(s('client_overview')?.bullets.length ?? 0, 'fact'),
+      body: (
+        <>
           <dl className="facts">
             <div>
               <dt>Segment</dt>
@@ -189,32 +138,33 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
           </dl>
           <SectionNotes section={s('client_overview')} />
           <BulletList section={s('client_overview')} cite={cite} compact />
-        </section>
-
-        <section id="r-changed" aria-labelledby="h-changed">
-          <div className="sec-head">
-            <h3 id="h-changed">{b.last_interaction ? `What changed since ${dayMonth(b.last_interaction)}` : 'What changed'}</h3>
-            <Tag className="ml-auto">Computed by code · no AI</Tag>
-          </div>
-          {b.what_changed.length === 0 ? (
-            <p className="note">{b.last_interaction ? 'Nothing new since the last interaction.' : 'No earlier interaction on file.'}</p>
-          ) : (
-            <ul className="bullets">
-              {b.what_changed.map((c, i) => (
-                <li key={i}>
-                  {c.text}
-                  <CiteChips ids={c.evidence_ids} cite={cite} />
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <section id="r-asks" aria-labelledby="h-asks">
-          <div className="sec-head">
-            <h3 id="h-asks">What they asked, what we promised</h3>
-            <AuthorTag section={s('client_said')} />
-          </div>
+        </>
+      ),
+    },
+    {
+      id: 'changed', nav: 'What changed', meta: String(b.what_changed.length),
+      title: b.last_interaction ? `What changed since ${dayMonth(b.last_interaction)}` : 'What changed',
+      tag: <Tag className="author-tag">Computed by code · no AI</Tag>,
+      body:
+        b.what_changed.length === 0 ? (
+          <p className="note">{b.last_interaction ? 'Nothing new since the last interaction.' : 'No earlier interaction on file.'}</p>
+        ) : (
+          <ul className="bullets">
+            {b.what_changed.map((c, i) => (
+              <li key={i}>
+                {c.text}
+                <CiteChips ids={c.evidence_ids} cite={cite} />
+              </li>
+            ))}
+          </ul>
+        ),
+    },
+    {
+      id: 'asks', nav: 'Asks and promises', title: 'What they asked, what we promised',
+      meta: overdue ? `${overdue} late` : String(b.actions.length), tone: overdue ? 'bad' : undefined,
+      tag: <AuthorTag section={s('client_said')} />,
+      body: (
+        <>
           <SectionNotes section={s('client_said')} />
           <span className="list-label">They said</span>
           <BulletList section={s('client_said')} cite={cite} />
@@ -251,14 +201,19 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
               </ul>
             </>
           )}
-        </section>
-
-        <section id="r-numbers" aria-labelledby="h-numbers">
-          <div className="sec-head">
-            <h3 id="h-numbers">Numbers that matter</h3>
-            {latestAsOf && <span className="sub">As of {shortDate(latestAsOf)}</span>}
-            <AuthorTag section={s('metrics')} />
-          </div>
+        </>
+      ),
+    },
+    {
+      id: 'numbers', nav: 'Numbers', title: 'Numbers that matter', meta: String(b.metrics.length),
+      tag: (
+        <>
+          {latestAsOf && <span className="sub">As of {shortDate(latestAsOf)}</span>}
+          <AuthorTag section={s('metrics')} />
+        </>
+      ),
+      body: (
+        <>
           {b.metrics.length === 0 && <p className="note">No figures on file.</p>}
           <div className="tiles">
             {b.metrics.map((m) => (
@@ -279,13 +234,14 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
               </div>
             ))}
           </div>
-        </section>
-
-        <section id="r-opps" aria-labelledby="h-opps">
-          <div className="sec-head">
-            <h3 id="h-opps">What to bring up</h3>
-            <AuthorTag section={s('opportunities')} />
-          </div>
+        </>
+      ),
+    },
+    {
+      id: 'opps', nav: 'What to bring up', title: 'What to bring up', meta: picked ? `${picked} picked` : '',
+      tone: 'indigo', tag: <AuthorTag section={s('opportunities')} />,
+      body: (
+        <>
           <SectionNotes section={s('opportunities')} />
           {live.length === 0 && <p className="note">No live opportunities.</p>}
           {live.map((o) => {
@@ -309,13 +265,12 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
                     {on ? 'On agenda' : 'Add to agenda'}
                   </Button>
                 </div>
-                {why && (
+                {why ? (
                   <p className="opp-pitch">
                     <BulletText text={why.text} />
                     <CiteChips ids={why.citations} cite={cite} />
                   </p>
-                )}
-                {!why && (
+                ) : (
                   <span className="sub">
                     Owner {o.owner}
                     {o.next_step && ` · Next step: ${o.next_step}`}
@@ -333,14 +288,16 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
               <CiteChips ids={[o.evidence_id]} cite={cite} />
             </p>
           ))}
-        </section>
-
-        <section id="r-news" aria-labelledby="h-news">
-          <div className="sec-head">
-            <h3 id="h-news">In the news</h3>
-            <AuthorTag section={s('news')} />
-          </div>
+        </>
+      ),
+    },
+    {
+      id: 'news', nav: 'In the news', title: 'In the news', meta: String(s('news')?.bullets.length ?? 0),
+      tag: <AuthorTag section={s('news')} />,
+      body: (
+        <>
           <SectionNotes section={s('news')} />
+          {(s('news')?.bullets ?? []).length === 0 && <p className="note">No recent approved news.</p>}
           {(s('news')?.bullets ?? []).map((x, i) => {
             const source = b.evidence[x.citations[0]]
             return (
@@ -353,13 +310,14 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
               </div>
             )
           })}
-        </section>
-
-        <section id="r-watch" aria-labelledby="h-watch" className="watch">
-          <div className="sec-head">
-            <h3 id="h-watch">Watch out for</h3>
-            <AuthorTag section={s('uncertain')} />
-          </div>
+        </>
+      ),
+    },
+    {
+      id: 'watch', nav: 'Watch out for', title: 'Watch out for', meta: String(attention.length),
+      tone: attention.length ? 'warn' : undefined, tag: <AuthorTag section={s('uncertain')} />,
+      body: (
+        <div className="watch">
           {attention.length === 0 && <p className="note">Nothing to watch out for.</p>}
           <ul>
             {attention.map((f) => {
@@ -383,8 +341,90 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
                 </li>
               ))}
           </ul>
+        </div>
+      ),
+    },
+    {
+      id: 'ask', nav: 'Ask a follow-up', title: 'Ask a follow-up', meta: answers.length ? `${answers.length} asked` : '',
+      body: <AskPanel briefing={b} userId={userId} answers={answers} onAnswer={(a) => setAnswers((all) => [a, ...all])} cite={cite} />,
+    },
+  ]
+  const part = parts[current]
+  const prev = parts[current - 1]
+  const next = parts[current + 1]
+
+  return (
+    <div className="read">
+      <nav className="section-nav" aria-label="Briefing sections">
+        <span className="section-nav-label">Sections</span>
+        {parts.map((p, i) => (
+          <button key={p.id} type="button" className="nav-sec" aria-current={i === current} onClick={() => setCurrent(i)}>
+            <span className="nav-num">{i + 1}</span>
+            <span className="nav-title">{p.nav}</span>
+            {p.meta && <span className={`nav-meta ${p.tone ? `tone-${p.tone}` : ''}`}>{p.meta}</span>}
+          </button>
+        ))}
+        <span className="nav-hint">One section at a time, so the source panel stays in view.</span>
+      </nav>
+
+      <div className="read-main">
+        <section className="panel summary-card" aria-labelledby="h-summary">
+          <h3 id="h-summary" className="kicker">
+            In 30 seconds
+          </h3>
+          <ul className="summary">
+            {summary(b).map((line, i) => (
+              <li key={i}>{line}</li>
+            ))}
+          </ul>
+          <div className="hints">
+            <span>
+              <span className="cite" style={{ marginLeft: 0 }} aria-hidden="true">
+                <SourceIcon source="email" size={10} />2
+              </span>
+              Click a number to see the source
+            </span>
+            <span>
+              <span className="mono" style={{ fontWeight: 600, color: 'var(--text)' }} aria-hidden="true">
+                $
+              </span>
+              Figures come from SQL, formatted by code, never by AI
+            </span>
+          </div>
         </section>
-      </article>
+
+        <article className="panel read-card" aria-labelledby="h-part">
+          <div className="read-progress">
+            <span className="mono small muted">
+              {current + 1} of {parts.length}
+            </span>
+            <span className="progress-segs" aria-hidden="true">
+              {parts.map((p, i) => (
+                <span key={p.id} className={i <= current ? 'on' : ''} />
+              ))}
+            </span>
+          </div>
+          <div className="sec-head">
+            <h3 id="h-part">{part.title}</h3>
+            {part.tag}
+          </div>
+          {part.body}
+          <div className="read-pager">
+            {prev && (
+              <Button variant="ghost" size="sm" onClick={() => setCurrent(current - 1)}>
+                <ChevronLeft aria-hidden="true" />
+                {prev.nav}
+              </Button>
+            )}
+            {next && (
+              <Button variant="outline" size="sm" className="ml-auto" onClick={() => setCurrent(current + 1)}>
+                Next: {next.nav}
+                <ChevronRight aria-hidden="true" />
+              </Button>
+            )}
+          </div>
+        </article>
+      </div>
 
       <aside className="read-aside" aria-label="Source and agenda">
         <SourcePanel key={selected ?? 'none'} briefing={{ ...b, evidence }} userId={userId} evidenceId={selected} number={selected ? cite.number(selected) : 0} />
@@ -411,6 +451,5 @@ export function ReadStep({ briefing: b, userId, progress }: Props) {
         </section>
       </aside>
     </div>
-    </>
   )
 }

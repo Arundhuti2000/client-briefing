@@ -2,7 +2,7 @@
 # or point at it directly:  make test PYTHON=.venv/Scripts/python
 PYTHON ?= python
 
-.PHONY: data load unify briefing api web test eval eval-real llm-check
+.PHONY: data holdout load unify briefing api web test eval eval-real eval-break llm-check mcp
 
 # Which briefing `make briefing` prints: CLIENT is an ID, name or alias; USER_ID is u1 or u2.
 # (Not "AS" or "USER": make predefines AS as the assembler, and USER is a shell variable.)
@@ -12,6 +12,10 @@ USER_ID ?= u2
 # Write the raw source files: data/raw/*.csv, data/raw/docs/, claims, trap answer key
 data:
 	$(PYTHON) -m data.generate_data
+
+# Write the held-out dataset to data/holdout/ (a separate generator; never used to tune rules)
+holdout:
+	$(PYTHON) -m data.generate_holdout
 
 # Load data/raw/*.csv into briefing.db: stg_ tables as-is, then cleaned typed tables
 load:
@@ -37,9 +41,16 @@ web:
 test:
 	$(PYTHON) -m pytest
 
-# Phase 6: the scorecard on the golden set, mock LLM (deterministic, free).
-# Exits non-zero if restricted leakage or injection is above zero.
+# Phase 6: the scorecard on the dev and held-out golden sets, then the quality metrics
+# report, mock LLM (deterministic, free). Exits non-zero if restricted leakage, injection
+# or the red team is above zero. Saves eval/last_run.json for the Evaluations page.
 eval:
+	$(PYTHON) -m eval.run_eval
+
+# The eval with the entitlement filter switched off (in the eval process only):
+# Restricted leakage must FAIL and the run must exit non-zero. Proves the check works.
+eval-break: export EVAL_BREAK_ENTITLEMENTS = 1
+eval-break:
 	$(PYTHON) -m eval.run_eval
 
 # The same, then again with the LLM in .env (cached answers cost no requests)
@@ -49,3 +60,7 @@ eval-real:
 # Ping each LLM provider (one tiny request each) and print which work
 llm-check:
 	$(PYTHON) -m app.llm_check
+
+# The read-only tools as an MCP server (stdio), e.g. for Claude Desktop
+mcp:
+	$(PYTHON) -m mcp_server.server

@@ -39,6 +39,7 @@ STALE_AFTER_DAYS = 120
 MAX_CHUNK_CHARS = 1000   # longer documents are split by paragraph
 
 LEGAL_SUFFIXES = {"llc", "inc", "ltd", "plc", "corp", "partners"}
+SUFFIX_TYPO_SCORE = 85   # a last word this close to a long legal suffix is a misspelt suffix
 LOST_STAGES = {"Lost"}   # "Won" means the client did commit, so it is not a conflict
 
 # Every table that points at a client; merged clients' rows move to the survivor.
@@ -93,12 +94,39 @@ CREATE TABLE chunks (
 # ---------------------------------------------------------------------------
 
 
+def words_of(text: str) -> list[str]:
+    """Lower case, punctuation removed: 'Raj J. Patel' -> ['raj', 'j', 'patel']"""
+    return re.sub(r"[^\w\s]", " ", text.lower()).split()
+
+
+def is_legal_suffix(word: str) -> bool:
+    """'partners', and a misspelt long suffix ('prtners' scores 93; real words like 'painters' 75).
+    Short suffixes must be exact: a typo of 'inc' can't be told from a real word."""
+    return word in LEGAL_SUFFIXES or (len(word) >= 6 and any(
+        fuzz.ratio(word, suffix) >= SUFFIX_TYPO_SCORE for suffix in LEGAL_SUFFIXES if len(suffix) >= 6))
+
+
 def normalize(name: str) -> str:
     """'Northwind Capital Partners LLC' -> 'northwind capital'; 'Northwind Cap.' -> 'northwind cap'"""
-    words = re.sub(r"[^\w\s]", " ", name.lower()).split()
-    while words and words[-1] in LEGAL_SUFFIXES:
+    words = words_of(name)
+    while words and is_legal_suffix(words[-1]):
         words.pop()
     return " ".join(words)
+
+
+def same_person(a: str, b: str) -> bool:
+    """'Raj Patel' = 'RAJ  PATEL' = 'Raj J. Patel': case, spacing and middle initials don't matter.
+    'R. Patel' is not 'Raj Patel': a first name that is only an initial still needs confirming."""
+    def key(name: str) -> list[str]:
+        words = words_of(name)
+        middle = [w for w in words[1:-1] if len(w) > 1]  # drops the 'j' in 'raj j patel'
+        return words[:1] + middle + words[1:][-1:]       # first name, middle names, last name
+    return key(a) == key(b)
+
+
+def same_product(on_file: str, said: str) -> bool:
+    """'FX Hedging' matches 'fx hedging' and 'FX Hedging program': every word on file is in what was said."""
+    return set(words_of(on_file)) <= set(words_of(said))
 
 
 def strictest(*entitlements: str) -> str:
@@ -356,7 +384,7 @@ def flag_role_conflicts(conn, docs: list[Document], doc_clients: dict[str, str])
                 continue
             contact = conn.execute("SELECT * FROM contacts WHERE client_id = ? AND lower(title) = lower(?) "
                                    "ORDER BY updated_at DESC LIMIT 1", (client_id, claim["role"])).fetchone()
-            if contact is None or contact["name"].lower() == claim["name"].lower():
+            if contact is None or same_person(contact["name"], claim["name"]):
                 continue  # nobody holds the role on file, or the document agrees
             role, said_by = claim["role"], doc_phrase(doc.doc_type, doc.date)  # e.g. "a June email"
             updated = month_of(contact["updated_at"])
@@ -380,8 +408,10 @@ def flag_commitment_conflicts(conn, docs: list[Document], doc_clients: dict[str,
         for claim in doc.claims:
             if client_id is None or claim["type"] != "commitment":
                 continue
-            opp = conn.execute("SELECT * FROM opportunities WHERE client_id = ? AND lower(product) = lower(?)",
-                               (client_id, claim["product"])).fetchone()
+            opps = conn.execute("SELECT * FROM opportunities WHERE client_id = ?", (client_id,)).fetchall()
+            matches = [o for o in opps if same_product(o["product"], claim["product"])]
+            # The most specific match: 'FX Hedging Advisory' beats 'FX Hedging' for 'FX Hedging Advisory program'
+            opp = max(matches, key=lambda o: len(words_of(o["product"])), default=None)
             if opp is None or opp["stage"] not in LOST_STAGES:
                 continue
             product, amount = plain_words(claim["product"]), format_usd(claim["amount_usd"])

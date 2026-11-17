@@ -1,0 +1,5 @@
+opp_id,client_name,product,stage,est_value_usd,owner,next_step,updated_at,restricted,required_entitlement
+OPP-COB-TF,Cobalt Ridge,Trade Finance,Proposal,380000,Maya Chen,Send term sheet for the receivables facility,2026-10-26 09:15:00,0,standard
+OPP-MER-VD,Meridian Biotherapeutics,Venture Debt,Negotiation,2900000,Priyanka Rao,Agree covenants for Project Lantern,2026-10-29 17:00:00,1,restricted_deals
+OPP-COB-CH,Cobalt Ridge Logistics,Commodity Hedging,lost,260000,Omar Haddad,None - the client hedged fuel with its broker,2026-10-15 13:30:00,0,standard
+OPP-MER-PM,Meridian Bio,Payments Modernization,Discovery,210000,Priyanka Rao,Map current payment flows with Amara Diallo,2026-10-21 10:10:00,0,standard

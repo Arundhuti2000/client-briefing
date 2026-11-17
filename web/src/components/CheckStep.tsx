@@ -2,25 +2,32 @@
 // is the banker's note (kept in this browser and turned into a follow-up); the briefing
 // text itself always follows the records, as the validator checked it.
 import type { Briefing } from '../api'
-import { shortDate } from '../format'
+import { dateTime, shortDate } from '../format'
 import type { Progress } from '../progress'
 import { conflictOptions, isRecord, statement } from '../workflow'
 import { SourceIcon, StatusText, Tag } from './common'
 import type { Tone } from './common'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 
-type Props = { briefing: Briefing; progress: Progress; onDecide: (flagId: string, sourceId: string) => void }
+type Props = {
+  briefing: Briefing
+  progress: Progress
+  saved: Record<string, string> // flag -> when the API saved the decision
+  error: string | null
+  onDecide: (flagId: string, sourceId: string) => void
+}
 
 const GOOD_TO_KNOW: Record<string, [string, Tone]> = {
   stale_statement: ['Out of date', 'warn'],
   overdue: ['Overdue', 'bad'],
 }
 
-export function CheckStep({ briefing: b, progress, onDecide }: Props) {
+export function CheckStep({ briefing: b, progress, saved, error, onDecide }: Props) {
   const conflicts = b.flags.filter((f) => f.flag_type === 'conflict')
   const others = b.flags.filter((f) => f.flag_type !== 'conflict' && !f.housekeeping)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {error && <p className="note note-error">{error}</p>}
       {conflicts.length === 0 && (
         <div className="panel panel-pad">
           <p className="note">Nothing to decide: no two sources disagree for this client.</p>
@@ -36,7 +43,13 @@ export function CheckStep({ briefing: b, progress, onDecide }: Props) {
                 {i + 1}/{conflicts.length}
               </span>
               <span className="conflict-q">{f.title}</span>
-              {chosen ? <StatusText tone="good">Decided</StatusText> : <StatusText tone="warn">Needs you</StatusText>}
+              {chosen ? (
+                <StatusText tone="good">
+                  {saved[f.evidence_id] ? `Decided · saved ${dateTime(saved[f.evidence_id])}` : 'Decided'}
+                </StatusText>
+              ) : (
+                <StatusText tone="warn">Needs you</StatusText>
+              )}
             </div>
             <p className="lead" style={{ marginTop: -8, fontSize: 14 }}>
               {f.detail}

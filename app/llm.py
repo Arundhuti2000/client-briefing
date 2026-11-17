@@ -66,6 +66,9 @@ class Completion(BaseModel):
     notes: list[str] = []    # what went wrong on the way, e.g. a rate limit and a fallback
     cache_file: str | None = None  # where this answer is cached (marked once it passes the validator)
     seconds: float = 0.0           # time spent getting it, fallbacks included (0 when cached)
+    requests: int = 0              # API requests it cost, retries and fallbacks included (0 when cached)
+    tokens_in: int = 0
+    tokens_out: int = 0
 
 # ---------------------------------------------------------------------------
 # Prompt
@@ -164,6 +167,8 @@ SCHEMA_FORMAT = {"type": "json_schema",
 class Reply(NamedTuple):
     text: str
     model: str  # the model that actually answered (OpenRouter may have fallen through its list)
+    tokens_in: int = 0   # as reported by the provider (0 if it doesn't say)
+    tokens_out: int = 0
 
 
 class RateLimiter:
@@ -201,7 +206,9 @@ def call_gemini(models: list[str], prompt: str, system: str = SYSTEM_PROMPT, res
             response_json_schema=(response_format or SCHEMA_FORMAT)["json_schema"]["schema"]
             if (response_format or SCHEMA_FORMAT).get("type") == "json_schema" else None,
             thinking_config=types.ThinkingConfig(thinking_level=types.ThinkingLevel.LOW)))  # rewriting, not reasoning
-    return Reply(response.text or "", getattr(response, "model_version", None) or models[0])
+    usage = getattr(response, "usage_metadata", None)
+    return Reply(response.text or "", getattr(response, "model_version", None) or models[0],
+                 getattr(usage, "prompt_token_count", 0) or 0, getattr(usage, "candidates_token_count", 0) or 0)
 
 
 def call_openrouter(models: list[str], prompt: str, system: str = SYSTEM_PROMPT,
@@ -222,7 +229,9 @@ def call_openrouter(models: list[str], prompt: str, system: str = SYSTEM_PROMPT,
         response = create(response_format or SCHEMA_FORMAT)               # structured output where the model supports it
     except BadRequestError:
         response = create({"type": "json_object"})     # otherwise JSON mode; the validator decides either way
-    return Reply(response.choices[0].message.content or "", response.model or models[0])
+    usage = getattr(response, "usage", None)
+    return Reply(response.choices[0].message.content or "", response.model or models[0],
+                 getattr(usage, "prompt_tokens", 0) or 0, getattr(usage, "completion_tokens", 0) or 0)
 
 
 def call_ollama(models: list[str], prompt: str, system: str = SYSTEM_PROMPT, response_format: dict | None = None) -> Reply:
@@ -231,7 +240,8 @@ def call_ollama(models: list[str], prompt: str, system: str = SYSTEM_PROMPT, res
     url = os.getenv("OLLAMA_URL", "http://localhost:11434") + "/api/chat"
     request = urllib.request.Request(url, data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(request, timeout=CALL_TIMEOUT_SECONDS) as response:
-        return Reply(json.loads(response.read())["message"]["content"], models[0])
+        data = json.loads(response.read())
+        return Reply(data["message"]["content"], models[0], data.get("prompt_eval_count", 0), data.get("eval_count", 0))
 
 
 PROVIDERS = {"gemini": call_gemini, "openrouter": call_openrouter, "ollama": call_ollama}
@@ -299,11 +309,14 @@ def describe_error(error: Exception) -> str:
     return f"{reason}: {message}" if message else reason
 
 
-def call_with_retry(provider: str, models: list[str], prompt: str, **options) -> Reply:
-    """One request, respecting the provider's rate limit; on a 429, back off and retry once."""
+def call_with_retry(provider: str, models: list[str], prompt: str, count: list[int] | None = None, **options) -> Reply:
+    """One request, respecting the provider's rate limit; on a 429, back off and retry once.
+    `count` (a one-item list) is increased for every request actually sent."""
+    count = [0] if count is None else count
     limiter = rate_limiters.get(provider)
     if limiter:
         limiter.wait()
+    count[0] += 1
     try:
         return PROVIDERS[provider](models, prompt, **options)
     except Exception as e:
@@ -312,6 +325,7 @@ def call_with_retry(provider: str, models: list[str], prompt: str, **options) ->
     time.sleep(BACKOFF_SECONDS)
     if limiter:
         limiter.wait()
+    count[0] += 1
     return PROVIDERS[provider](models, prompt, **options)  # a second 429 also moves down the chain
 
 
@@ -390,12 +404,12 @@ def walk_chain(prompt: str, chain: list[str], system: str, response_format: dict
     cached = read_cache(prompt, chain, system)  # 1. free, and the same text every time
     if cached is not None:
         return cached
-    notes, started = [], time.perf_counter()
+    notes, started, requests = [], time.perf_counter(), [0]
     for provider, models in requests_for(chain):  # 2. otherwise call, provider by provider
         if provider == "mock":
             if template is not None:
                 answer = template(notes + ["used the template"] if notes else [])
-                return answer.model_copy(update={"seconds": round(time.perf_counter() - started, 1)})
+                return answer.model_copy(update={"seconds": round(time.perf_counter() - started, 1), "requests": requests[0]})
             continue
         key = API_KEYS.get(provider)
         if key and not os.getenv(key):
@@ -405,13 +419,14 @@ def walk_chain(prompt: str, chain: list[str], system: str, response_format: dict
             notes.append(f"{provider} skipped: no models configured")
             continue
         try:
-            reply = call_with_retry(provider, models, prompt, system=system, response_format=response_format)
+            reply = call_with_retry(provider, models, prompt, requests, system=system, response_format=response_format)
             answer = save_reply(prompt, provider, reply, notes, system)
-            return answer.model_copy(update={"seconds": round(time.perf_counter() - started, 1)})
+            return answer.model_copy(update={"seconds": round(time.perf_counter() - started, 1), "requests": requests[0],
+                                             "tokens_in": reply.tokens_in, "tokens_out": reply.tokens_out})
         except Exception as e:
             notes.append(f"{provider} {', '.join(models)} failed: {describe_error(e)}")
     return Completion(data=None, provider="none", model="none", notes=notes + ["no provider answered"],
-                      seconds=round(time.perf_counter() - started, 1))
+                      seconds=round(time.perf_counter() - started, 1), requests=requests[0])
 
 
 def write_sections(sections: list[SectionEvidence], feedback: dict[str, list[str]] | None = None,
