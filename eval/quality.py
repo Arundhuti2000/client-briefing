@@ -1,4 +1,4 @@
-"""Quality metrics, beside the pass/fail scorecard (SPEC.md section 7): numbers to track,
+"""Quality metrics, beside the pass/fail scorecard (docs/EVALUATION.md#quality-metrics): numbers to track,
 not gates.
 
   - retrieval:    Precision@5, Recall@5, MRR and nDCG@5 for BM25 only, vector only and hybrid

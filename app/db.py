@@ -1,4 +1,4 @@
-"""SQLite access for the tools: read-only connections and entitlement-aware queries (SPEC.md section 5).
+"""SQLite access for the tools: read-only connections and entitlement-aware queries (docs/SECURITY.md#filtering-in-the-query).
 
 Every SQL query the tools run lives in this file. Three tables can hold
 restricted content (opportunities, chunks, data_quality_flags); their queries

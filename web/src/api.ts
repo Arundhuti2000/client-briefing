@@ -1,4 +1,4 @@
-// Typed calls to the FastAPI endpoints (SPEC.md section 6). Each type mirrors a
+// Typed calls to the FastAPI endpoints (docs/API.md#endpoints). Each type mirrors a
 // Pydantic model in api/main.py or app/; the names and fields are the same.
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000'

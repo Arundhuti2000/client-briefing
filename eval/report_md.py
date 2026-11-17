@@ -2,7 +2,8 @@
 number is ever typed by hand.
 
 Reads eval/last_run.json (the last `make eval`), eval/history/ (the held-out first runs and the
-last real-model run) and rewrites the text between the RESULTS markers in README.md.
+last real-model run) and rewrites the text between the RESULTS markers in README.md and in
+docs/EVALUATION.md ("Current results").
 
 Run:  make results   (after make eval)
 """
@@ -14,6 +15,7 @@ ROOT = Path(__file__).resolve().parent.parent
 REPORT = ROOT / "eval" / "last_run.json"
 HISTORY = ROOT / "eval" / "history"
 README = ROOT / "README.md"
+EVALUATION_DOC = ROOT / "docs" / "EVALUATION.md"
 PRESENTATION = ROOT / "PRESENTATION.md"
 START, END = "<!-- RESULTS:START -->", "<!-- RESULTS:END -->"
 NAMES = {"dev": "Dev", "dev2": "Dev 2", "holdout": "Holdout"}
@@ -205,8 +207,12 @@ def write_between(path: Path, start: str, end: str, body: str) -> None:
 
 
 def main() -> None:
-    write_between(README, START, END, results_markdown())
+    results = results_markdown()
+    write_between(README, START, END, results)
     print(f"Wrote the results section of {README.name} from {REPORT.name} and {HISTORY.name}/.")
+    if EVALUATION_DOC.exists():
+        write_between(EVALUATION_DOC, START, END, results)
+        print(f"Wrote the Current results of docs/{EVALUATION_DOC.name}.")
     if PRESENTATION.exists():
         write_between(PRESENTATION, "<!-- NUMBERS:START -->", "<!-- NUMBERS:END -->", presentation_numbers())
         print(f"Wrote the Key numbers of {PRESENTATION.name}.")

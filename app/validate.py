@@ -1,4 +1,4 @@
-"""The contract between code and the LLM, and the checks on everything it writes (SPEC.md section 5).
+"""The contract between code and the LLM, and the checks on everything it writes (docs/SECURITY.md#validator-rules).
 
 The LLM is the least trusted component, so code checks every section before a
 person sees it:

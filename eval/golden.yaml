@@ -1,4 +1,4 @@
-# Golden set for the scorecard (SPEC.md section 7). eval/run_eval.py reads it.
+# Golden set for the scorecard (docs/EVALUATION.md#scorecard). eval/run_eval.py reads it.
 # `trap` links a case to a planted trap (data/planted_traps.json), so the scorecard
 # can show which check covers each of T1-T12.
 

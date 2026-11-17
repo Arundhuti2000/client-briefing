@@ -4,7 +4,7 @@ Every design decision made while building this prototype and its evaluation, in 
 Each one says **what** we decided, **why**, what we **rejected** (when there was a real
 alternative) and what it **costs**. Decisions are numbered (D1, D2, …) so they can be referenced.
 
-For the full design see [SPEC.md](SPEC.md); for commands see [README.md](README.md).
+For the system specification see [SPEC.md](SPEC.md) and the detailed design in [docs/](docs/); for commands see [README.md](README.md).
 
 **Contents**
 
@@ -44,7 +44,7 @@ For the full design see [SPEC.md](SPEC.md); for commands see [README.md](README.
 - Cost: every query has to carry the user's entitlements.
 
 **D4. Keep everything small, deterministic and explainable.**
-- Built one phase at a time in the order of SPEC.md section 8; boring tools (Python, SQLite, FastAPI, React).
+- Built one phase at a time (data, unification, tools and search, orchestration and validation, UI, evaluation); boring tools (Python, SQLite, FastAPI, React).
 - Why: the author must explain every part in an interview, and the eval must give the same answer every run.
 
 ---
@@ -448,7 +448,7 @@ For the full design see [SPEC.md](SPEC.md); for commands see [README.md](README.
 - Also: a replayed answer already passed the validator once, so a replay can't measure how often first drafts fail. The reported faithfulness run therefore used fresh requests (with the cap), and the README says which briefings were replayed.
 
 **D81. Reported numbers are generated, never typed.**
-- `make results` writes the README's results section from `eval/last_run.json` and `eval/history/` (the held-out first runs and the last real-model run, `eval_real.json`, which later template runs don't overwrite). It also fills the Key numbers block of a `PRESENTATION.md` in the repo root, if one is there (the talk notes are kept outside the repo); `make eval-break` keeps its scorecard in `eval/history/eval_break.json` for this.
+- `make results` writes the results sections of the README and docs/EVALUATION.md from `eval/last_run.json` and `eval/history/` (the held-out first runs and the last real-model run, `eval_real.json`, which later template runs don't overwrite). It also fills the Key numbers block of a `PRESENTATION.md` in the repo root, if one is there (the talk notes are kept outside the repo); `make eval-break` keeps its scorecard in `eval/history/eval_break.json` for this.
 
 **D82. The demo is checked before it is given (2026-11-17).**
 - `make demo-check` replays the demo's paths (three briefings, three follow-up questions) with `CACHE_REPLAY=any` and a request budget of 0, so a cache miss shows as FAIL instead of spending a request or falling back to the template mid-demo.
@@ -542,7 +542,7 @@ Result (template mode, labels corrected):
 - Identity is a request header; step progress is in the browser; one SQLite file.
 - Free LLM providers may log prompts; fine for synthetic data, not for client data.
 
-**Would do in production (SPEC section 7)**
+**Would do in production ([docs/EVALUATION.md](docs/EVALUATION.md#production-evaluation-plan), [SPEC.md section 13](SPEC.md#13-path-to-production))**
 1. **Offline gate:** the scorecard in CI on every change to prompts, rules or models; a drop blocks the release.
 2. **Shadow mode:** analysts keep writing briefings; the system writes one alongside; reviewers compare.
 3. **Human review rubric:** accuracy, completeness, usefulness and "would you send this?" on a weekly sample.

@@ -1,4 +1,4 @@
-"""FastAPI: thin endpoints over app/ (SPEC.md section 6).
+"""FastAPI: thin endpoints over app/ (docs/API.md#endpoints).
 
 All logic stays in app/, so the eval and tests never need the frontend. The
 caller is identified by the X-User-Id header (in production: the firm's login),
@@ -224,7 +224,8 @@ def resolve_client(q: Annotated[str, Query(min_length=1, max_length=200)], user:
 
 @app.post("/briefings", response_model=BriefingResponse)
 def create_briefing(body: BriefingRequest, user: CurrentUser):
-    """Build the full briefing for this user: one LLM call at most twice, every section validated."""
+    """Build the full briefing for this user: normally one LLM request for all sections (more on
+    a retry or a fallback down LLM_CHAIN), every section validated."""
     try:
         briefing = orchestrator.build_briefing(user, body.client_id, body.meeting_date)
     except BriefingError as e:

@@ -1,4 +1,4 @@
-"""Builds one client briefing with a fixed plan (SPEC.md section 5).
+"""Builds one client briefing with a fixed plan (docs/ARCHITECTURE.md#orchestration).
 
   1. Call the tools: read-only, filtered by the user's entitlements, audited.
   2. Build an evidence bundle per section. Every number and date is formatted here,

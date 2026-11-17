@@ -1,4 +1,4 @@
-"""Write the raw source files for the demo (SPEC.md section 3).
+"""Write the raw source files for the demo (docs/DATA.md#raw-sources-and-formats).
 
 Writes into data/:
   raw/*.csv              exports from the CRM, finance, pipeline, ... systems

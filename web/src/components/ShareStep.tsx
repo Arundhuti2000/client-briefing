@@ -1,5 +1,6 @@
 // Step 4, Share: the validator's results as plain checks, the follow-ups to create
-// (POST /tasks, on Approve), and the briefing as a file (the Markdown the API returns).
+// (on Approve, POST /briefings/{id}/share records the approval and creates them as tasks),
+// and the briefing as a file (the Markdown the API returns).
 import { useState } from 'react'
 import type { Briefing, ShareRecord } from '../api'
 import { count, dateTime } from '../format'

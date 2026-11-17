@@ -2,8 +2,9 @@
 
 Builds a pre-meeting client briefing from messy CRM data, metrics, notes and news.
 Code decides what's true; the LLM only explains it, and code checks the explanation.
-See [SPEC.md](SPEC.md) for the full design and [DECISIONS.md](DECISIONS.md) for every decision
-and trade-off (numbered D1–D82), including the dated held-out results.
+See [SPEC.md](SPEC.md) for the system specification, [Documentation](#documentation) for the
+detailed design, and [DECISIONS.md](DECISIONS.md) for every decision and trade-off (numbered
+D1–D82), including the dated held-out results.
 
 How AI was used in building this: see [AI_USAGE.md](AI_USAGE.md).
 
@@ -15,6 +16,20 @@ raise, recent news, and what is uncertain or conflicting in the data. Every sent
 source, every number comes from SQL, and anything the data disagrees about goes to the banker to
 decide instead of being silently picked. The banker checks conflicts, reads, asks follow-up
 questions, and approves the briefing before it is shared, with follow-up tasks created from it.
+
+## Documentation
+
+| Document | What it covers |
+| --- | --- |
+| [SPEC.md](SPEC.md) | System specification: scope, users, functional and non-functional requirements, risks, path to production, traceability matrix and glossary |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, data flow, orchestration, hybrid search, the LLM provider chain, caching, routing and the bounded agent, and the UI |
+| [docs/DATA.md](docs/DATA.md) | Raw sources and formats, staging and cleaning, every table, unification rules and thresholds, planted traps, and the three datasets |
+| [docs/API.md](docs/API.md) | Every FastAPI endpoint, the tool contracts, and the MCP server |
+| [docs/SECURITY.md](docs/SECURITY.md) | Entitlements, filtering in the query, injection defenses, the six validator rules, approval before sharing, audit and secrets |
+| [docs/EVALUATION.md](docs/EVALUATION.md) | Evaluation strategy, scorecard checks and targets, quality metrics, generated current results, held-out history, red team and CI |
+| [docs/OPERATIONS.md](docs/OPERATIONS.md) | Setup, configuration variables, make commands, LLM providers, request budget and caching, running the demo, troubleshooting |
+| [DECISIONS.md](DECISIONS.md) | Every design decision with its reason, rejected alternatives and cost (D1–D82) |
+| [AI_USAGE.md](AI_USAGE.md) | How AI tools were used to build the prototype |
 
 ## Demo in 2 minutes
 
@@ -102,7 +117,7 @@ about numbers and records) go from the evidence bundle straight to the validator
 | --- | --- | --- |
 | Aliases | Notes say "NWC" or "Northwind Cap." | Resolved to one client by rules |
 | Duplicate client | An older record on the same domain (or the same name) | Merged into the newest; its contacts, actions and documents follow |
-| Duplicate contact | The same person twice (email case, nickname, same name and title) | One contact kept, the newer |
+| Duplicate contact | The same person twice (the same email in a different letter case, even under a nickname; or the same name and title) | One contact kept, the newer |
 | Stale statement | A prior briefing quotes last year's revenue | The latest SQL figure is used; the old one is flagged with both values |
 | Conflicting statement | An email names a different CFO than the CRM | Flagged with both sources and dates; the newer one is used; the banker confirms |
 | Conflict across sources | A note says "committed" to a deal the pipeline marks Lost | Flagged; the deal is never shown as live |
@@ -126,7 +141,8 @@ about numbers and records) go from the evidence bundle straight to the validator
   and never repeated; the validator rejects claims without evidence.
 - **Validator rules:** every bullet cites evidence that exists; every number and date is in its
   cited evidence; no restricted text; no injected text; no internal IDs in prose. A failed draft is
-  retried once, then falls back to the evidence itself.
+  retried once, then written by the next provider in `LLM_CHAIN`; after the last provider, the
+  section falls back to the evidence itself.
 - **Audit log:** every tool call (user, tool, arguments, result IDs, errors) is logged; no audit
   row, no data.
 - **Approval before sharing:** sharing is blocked until every conflict is decided; the approver,
@@ -187,7 +203,7 @@ Run from the repo root with the venv activated.
 | `make eval`  | Scorecard on dev, dev2 and held-out data, then the quality metrics report (template, no AI) |
 | `make eval-real` | The same, then again with the LLM chain in `.env` (adds faithfulness) |
 | `make eval-break` | The eval with the entitlement filter off: Restricted leakage must FAIL |
-| `make results` | Write the README's results section from the saved eval runs |
+| `make results` | Write the results sections of this README and docs/EVALUATION.md from the saved eval runs |
 | `make demo-check` | Replay the demo's AI paths from the cache (0 requests); PASS/FAIL per path |
 | `make llm-check` | Ping each LLM provider and show which ones work    |
 | `make mcp`   | Start the read-only tools as an MCP server (stdio)     |
@@ -203,8 +219,8 @@ make web       # terminal 2: http://localhost:5173
 
 Pick a user (Alex Morgan, Nadia Rahman and Sofia Marchetti may see restricted deals; Sam Rivera,
 Daniel Osei and Kwame Mensah may not), type a client (`NWC`, `Helios`, `Arbor`, `HPF`,
-`Kestrel Aviation`, `Copperleaf`, `Vossberg`, `LRS`, `Cedar Hollow`), and press
-**Generate briefing**. Click any citation chip to open its source. Deep link (a demo backup):
+`Kestrel Aviation`, `Copperleaf`, `Vossberg`, `LRS`, `Cedar Hollow`) in the search box, and
+open the client with **Review** or **Open**: the briefing is generated when it opens. Click any citation chip to open its source. Deep link (a demo backup):
 `http://localhost:5173/?user=u1&client=Helios`.
 
 For UI work without spending requests, start the API with the template only:
@@ -260,7 +276,7 @@ The result is saved to `eval/last_run.json` and shown on the **Evaluations** pag
 ## Results
 
 <!-- RESULTS:START -->
-Generated by `make results` from the eval run of 2026-11-17 11:03 UTC (`eval/last_run.json`) and `eval/history/`. Do not edit by hand.
+Generated by `make results` from the eval run of 2026-11-17 11:22 UTC (`eval/last_run.json`) and `eval/history/`. Do not edit by hand.
 
 **Scorecard** (dev: the rules were built on it; dev 2: held-out round 1, now development data; holdout: never used to change anything)
 
@@ -275,7 +291,7 @@ Generated by `make results` from the eval run of 2026-11-17 11:03 UTC (`eval/las
 | Injection resistance (zero tolerance) | 0 | 0 (in 26 checks) pass | 0 (in 1 checks) pass | 0 (in 2 checks) pass |
 | Routing accuracy | 100% | 8/8 (100%) pass | 8/8 (100%) pass | 6/8 (75%) **FAIL** |
 | Red team (zero tolerance) | 0 | 0 (in 8 checks) pass | 0 (in 3 checks) pass | 0 (in 2 checks) pass |
-| Latency per briefing | report | median 0.0 s, max 0.1 s | median 0.1 s, max 0.1 s | median 0.1 s, max 0.1 s |
+| Latency per briefing | report | median 0.0 s, max 0.1 s | median 0.0 s, max 0.1 s | median 0.0 s, max 0.1 s |
 | LLM requests per briefing | report | 0 | 0 | 0 |
 
 **Retrieval**
@@ -364,7 +380,7 @@ M&A deal. Every call shows up in the app's Audit log.
   one, the section shows its source facts.
 - Each section is labelled with the provider and the model that actually answered.
 - Answers are cached in `.cache/llm/<evidence>/<provider>--<model>.json`, so regenerating a
-  briefing is free. `CACHE_REPLAY=any` also replays any cached answer that passed the validator.
+  briefing is free. `CACHE_REPLAY=any` also replays any cached briefing answer that passed the validator.
 - OpenRouter: list only `:free` models (a free model that falls back to a paid one is billed at
   the paid price). Free models allow 50 requests a day without credits. Free providers may log
   prompts; the data here is synthetic, but production data would need a contracted provider.

@@ -1,4 +1,4 @@
-"""The scorecard (SPEC.md section 7): runs the golden set in eval/golden.yaml.
+"""The scorecard (docs/EVALUATION.md#scorecard): runs the golden set in eval/golden.yaml.
 
   1. Build a fresh copy of the data in a temp folder (same steps as `make data` +
      `make unify`), so the score never depends on what is in data/.

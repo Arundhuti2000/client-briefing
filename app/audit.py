@@ -1,4 +1,4 @@
-"""Audit trail: one row per tool call (SPEC.md section 6).
+"""Audit trail: one row per tool call (docs/SECURITY.md#audit-log).
 
 Records who called which tool with which arguments, and which evidence IDs came
 back (or the error). app/tools.py withholds a tool's facts if this write fails:

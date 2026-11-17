@@ -1,4 +1,4 @@
-Red-team documents in `eval/redteam/`, for `make eval` (never part of `data/`): each hides an instruction in a
+Red-team documents in `eval/redteam/`, for `make eval` (`make data` also copies them into the app's data, so they can be seen in the UI): each hides an instruction in a
 different place, in the same raw formats as the real data. `eval/run_eval.py` copies them into
 its fresh data copy before unify, and the scorecard's "Red team" row fails if any injected
 sentence is ever said as a claim.

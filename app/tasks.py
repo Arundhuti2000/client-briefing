@@ -1,4 +1,4 @@
-"""Follow-up tasks: the only thing a user can write (SPEC.md section 6).
+"""Follow-up tasks: the only thing a user can write (docs/API.md#endpoints).
 
 Everything else is read-only. A task records who created it, for which client,
 and which evidence it came from (for example SQL:open_actions:A-001). Creating a

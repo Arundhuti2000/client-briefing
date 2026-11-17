@@ -1,4 +1,4 @@
-"""Load the raw CSV exports into SQLite (SPEC.md section 3).
+"""Load the raw CSV exports into SQLite (docs/DATA.md#staging-and-cleaning).
 
 Two deterministic steps, no LLM:
   1. Staging: copy every data/raw/*.csv as-is into a stg_<file> table (all TEXT),
@@ -41,7 +41,7 @@ SEVERITIES = {"Low", "Medium", "High"}
 ISSUE_STATUSES = {"Open", "Closed"}
 ACTION_STATUSES = {"Open", "Done"}
 
-# Typed tables: the tables and columns from SPEC.md section 3, plus planted_traps.
+# Typed tables: the tables and columns in docs/DATA.md#data-model, plus planted_traps.
 # Dates are ISO text (YYYY-MM-DD), so SQLite compares them correctly as strings.
 SCHEMA = """
 CREATE TABLE clients (

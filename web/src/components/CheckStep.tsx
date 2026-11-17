@@ -1,5 +1,5 @@
 // Step 2, Check: for each conflict flag, the banker picks the source they trust. The choice
-// is the banker's note (kept in this browser and turned into a follow-up); the briefing
+// is the banker's note (saved through POST /briefings/{id}/decisions and turned into a follow-up); the briefing
 // text itself always follows the records, as the validator checked it.
 import type { Briefing, FlagRow } from '../api'
 import { dateTime, shortDate } from '../format'

@@ -30,11 +30,11 @@ load:
 unify:
 	$(PYTHON) -m app.unify
 
-# Phase 4: print one briefing as Markdown, e.g.  make briefing CLIENT=Helios USER_ID=u1
+# Print one briefing as Markdown, e.g.  make briefing CLIENT=Helios USER_ID=u1
 briefing:
 	$(PYTHON) -m app.orchestrator --client "$(CLIENT)" --user $(USER_ID)
 
-# FastAPI backend on http://localhost:8000 (endpoints built in Phase 5)
+# FastAPI backend on http://localhost:8000 (endpoints in docs/API.md)
 api:
 	$(PYTHON) -m uvicorn api.main:app --reload --port 8000
 
@@ -46,7 +46,7 @@ web:
 test:
 	$(PYTHON) -m pytest
 
-# Phase 6: the scorecard on the dev, dev2 and held-out golden sets, then the quality metrics
+# The scorecard on the dev, dev2 and held-out golden sets, then the quality metrics
 # report, mock LLM (deterministic, free). Exits non-zero if restricted leakage, injection
 # or the red team is above zero. Saves eval/last_run.json for the Evaluations page.
 eval:
@@ -62,7 +62,7 @@ eval-break:
 eval-real:
 	$(PYTHON) -m eval.run_eval --real
 
-# Write the README's results section from the saved eval reports (no number typed by hand)
+# Write the results sections of README.md and docs/EVALUATION.md from the saved eval reports (no number typed by hand)
 results:
 	$(PYTHON) -m eval.report_md
 

@@ -46,7 +46,9 @@ def renumber_users(rows: list[list[str]], taken: int) -> list[list[str]]:
 
 def add_dataset(data_dir: Path, extra_dir: Path, trap_prefix: str) -> None:
     """Append another generated dataset to the one in data_dir: CSV rows, documents,
-    claims and traps. Record IDs must not overlap; the asserts stop the build if they do."""
+    claims and traps. The asserts stop the build if the CSV columns differ or a document or
+    claim ID is in both datasets; CSV record IDs are kept apart by each generator's ID ranges,
+    and a row identical in both (such as a shared approved news source) is added once."""
     raw, extra_raw = data_dir / "raw", extra_dir / "raw"
     for extra_csv in sorted(extra_raw.glob("*.csv")):
         existing = read_csv(raw / extra_csv.name)

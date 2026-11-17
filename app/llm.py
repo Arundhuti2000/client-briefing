@@ -1,4 +1,4 @@
-"""LLM client: one request per briefing, any provider, the same JSON out (SPEC.md section 5).
+"""LLM client: one request per briefing, any provider, the same JSON out (docs/ARCHITECTURE.md#llm-provider-chain).
 
 LLM_CHAIN (from .env, default gemini,openrouter,ollama,mock) lists providers in order:
   gemini      google-genai SDK: GEMINI_API_KEY, GEMINI_MODEL, GEMINI_FALLBACK_MODEL.

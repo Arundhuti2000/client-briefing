@@ -1,4 +1,4 @@
-"""Read-only briefing tools with Pydantic contracts (SPEC.md section 5).
+"""Read-only briefing tools with Pydantic contracts (docs/API.md#tool-contracts).
 
 Every tool:
   - takes a UserContext plus keyword arguments, validated by a Pydantic request model;

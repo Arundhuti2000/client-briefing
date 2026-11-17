@@ -1,4 +1,4 @@
-"""The banker's workflow on a briefing: conflict decisions, and sharing it (SPEC.md section 6).
+"""The banker's workflow on a briefing: conflict decisions, and sharing it (docs/SECURITY.md#approval-before-sharing).
 
 Two small writes, like follow-up tasks:
   - a decision: which source the banker trusts for one conflict flag;

@@ -1,4 +1,4 @@
-"""Unification: entity resolution, dedupe, staleness, conflicts, indexing (SPEC.md section 4).
+"""Unification: entity resolution, dedupe, staleness, conflicts, indexing (docs/DATA.md#unification-rules).
 
 All rules, no LLM. Every finding becomes a row in data_quality_flags, which the
 briefing's "Uncertain, conflicting, or unavailable" section reads directly.
@@ -31,7 +31,7 @@ from app.wording import (AS_OF_DATE, DOC_NAMES, article, capitalize, day_month, 
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
-RESOLVE_SCORE = 90       # fuzzy score that resolves a name (SPEC section 4)
+RESOLVE_SCORE = 90       # fuzzy score that resolves a name (docs/DATA.md#unification-rules)
 REVIEW_SCORE = 75        # 75-89 goes to the review queue instead
 MENTION_SCORE = 50       # not attached, but close enough to mention on that client's briefing
 CLIENT_MERGE_SCORE = 92  # name similarity that marks two client records as duplicates
@@ -198,7 +198,7 @@ class Resolution:
 
 
 class Resolver:
-    """Maps an ID, name or alias to a client_id with the rules from SPEC.md section 4, step 1."""
+    """Maps an ID, name or alias to a client_id with the entity resolution rules in docs/DATA.md#unification-rules."""
 
     def __init__(self, names: dict[str, set[str]], ids: dict[str, str]):
         self.names = names  # normalized name or alias -> client_ids
@@ -478,7 +478,7 @@ def split_into_chunks(text: str) -> list[str]:
 def index_chunks(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
     """Chunk every resolved document, except news from unapproved sources.
     Restricted documents are chunked too: they keep required_entitlement, and
-    search filters on it at query time (SPEC section 5)."""
+    search filters on it at query time (docs/SECURITY.md#filtering-in-the-query)."""
     approved = {name for (name,) in conn.execute("SELECT source_name FROM approved_news_sources")}
     for doc in docs:
         client_id = doc_clients.get(doc.doc_id)

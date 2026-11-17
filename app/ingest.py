@@ -1,4 +1,4 @@
-"""Load every document format into one Document model (SPEC.md section 3).
+"""Load every document format into one Document model (docs/DATA.md#raw-sources-and-formats).
 
 Each source system keeps its own format, in a folder of data/raw/docs/ named
 after its doc_type:

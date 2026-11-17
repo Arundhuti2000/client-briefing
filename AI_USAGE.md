@@ -18,6 +18,8 @@ This prototype was built with AI assistance, the way I'd expect an AI enablement
 3. **Written briefs for every change in direction,** so each decision has a record. The full list is in `DECISIONS.md`.
 4. **AI output treated like a teammate's pull request:** run it, read it, test it, and push back when it's wrong.
 
+**Build approach: documentation-driven.** The build followed the documentation at every step. `SPEC.md` was the single source of truth, and `CLAUDE.md` required reading it before every task, so no code was written without a documented design behind it. The spec laid out the build in phases (setup, synthetic data, unification, retrieval and tools, orchestration with the LLM and validator, FastAPI and React, evaluation, then README and submission), each with a "done when" condition and its own Claude Code prompt. Every phase was built from the spec, checked against its "done when" condition, and committed before the next one started. When the design changed, the spec was updated first and the code followed, so the documentation and the code never drifted apart. Once the build was complete, `SPEC.md` was rewritten as a formal system specification, with the detailed design moved into `docs/`.
+
 ---
 
 ## Decisions, mapped to the assignment

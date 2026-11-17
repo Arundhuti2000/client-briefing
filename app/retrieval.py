@@ -1,4 +1,4 @@
-"""Hybrid search over document chunks: BM25 + vectors, merged with RRF (SPEC.md sections 4 and 5).
+"""Hybrid search over document chunks: BM25 + vectors, merged with RRF (docs/ARCHITECTURE.md#hybrid-search).
 
 Filter first, rank second: SQL selects only the chunks this user may see for
 this client (app/db.py). Both rankers then score just those candidates, so a
@@ -30,7 +30,7 @@ from rank_bm25 import BM25Plus
 from app import db
 
 MODEL_NAME = "all-MiniLM-L6-v2"
-RRF_K = 60             # standard Reciprocal Rank Fusion constant (SPEC section 4)
+RRF_K = 60             # standard Reciprocal Rank Fusion constant (docs/ARCHITECTURE.md#hybrid-search)
 MIN_SIMILARITY = 0.25  # measured on our chunks: related text scores ~0.3-0.55, unrelated <= 0.11
 
 STOPWORDS = {"a", "an", "and", "are", "as", "at", "be", "by", "did", "do", "does", "for", "from", "has", "have",
