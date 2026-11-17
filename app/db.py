@@ -42,6 +42,11 @@ def canonical_client_id(conn, client_id: str) -> str | None:
     return row["survivor_id"] if row else None
 
 
+def clients(conn) -> list[sqlite3.Row]:
+    """Every client, by name (merged duplicates are gone; clients have no restricted rows)."""
+    return conn.execute("SELECT * FROM clients ORDER BY legal_name").fetchall()
+
+
 def client(conn, client_id: str) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM clients WHERE client_id = ?", (client_id,)).fetchone()
 

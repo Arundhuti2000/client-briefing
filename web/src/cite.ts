@@ -1,20 +1,23 @@
 // Numbered citation chips. Every evidence ID gets a number in the order it first
-// appears on the page; selecting a chip shows that source in the right-hand column.
+// appears in the Read step; selecting a chip shows that source in the right-hand panel.
 import type { Briefing } from './api'
 
 export type Cite = {
   number: (evidenceId: string) => number
-  total: number
+  describe: (evidenceId: string) => { label: string; source: string | null } // for the chip's icon and tooltip
   selected: string | null
   select: (evidenceId: string) => void
 }
 
-export function sectionCitations(b: Briefing, sectionId: string): string[] {
-  const section = b.sections.find((s) => s.id === sectionId)
-  return section ? section.bullets.flatMap((bullet) => bullet.citations) : []
+export function sectionOf(b: Briefing, sectionId: string) {
+  return b.sections.find((s) => s.id === sectionId)
 }
 
-// The page order of the cards, so chip numbers read top to bottom
+export function sectionCitations(b: Briefing, sectionId: string): string[] {
+  return sectionOf(b, sectionId)?.bullets.flatMap((bullet) => bullet.citations) ?? []
+}
+
+// The order of the Read step, top to bottom, then the agenda on the right
 export function numberSources(b: Briefing): Map<string, number> {
   const ordered = [
     ...sectionCitations(b, 'client_overview'),

@@ -19,6 +19,7 @@ from app import audit, db, orchestrator, retrieval, tools
 from app.orchestrator import Briefing, BriefingError
 from app.tasks import Task, TaskError, TaskRequest, create_task
 from app.tools import ClientId, Fact, UserContext
+from app.wording import AS_OF_DATE
 
 
 @asynccontextmanager
@@ -66,6 +67,19 @@ class BriefingResponse(Briefing):
     markdown: str                   # the same briefing as Markdown, for the download button
 
 
+class ClientSummary(BaseModel):
+    """One row of the meetings list: who, when, and what needs the banker before the meeting."""
+    client_id: str
+    client_name: str
+    segment: str
+    region: str
+    primary_banker: str | None
+    aliases: list[str]
+    meeting_date: dt.date
+    conflicts: list[str]            # titles of conflict flags: the banker decides these
+    heads_up: list[str]             # titles of the other flags that need attention (not housekeeping)
+
+
 class AuditRow(BaseModel):
     ts: str
     user_id: str
@@ -106,6 +120,30 @@ def list_users():
         rows = db.users(conn)
     return [UserInfo(user_id=r["user_id"], name=r["name"], role=r["role"],
                      entitlements=tools.load_user(r["user_id"]).entitlements) for r in rows]
+
+
+def client_summary(user: UserContext, client_id: str) -> ClientSummary | None:
+    """Built from the same audited, entitlement-filtered tools as the briefing, without the LLM."""
+    profile = tools.get_client_profile(user, client_id=client_id)
+    if not profile.ok:
+        return None
+    flags = tools.get_data_quality_flags(user, client_id=client_id)
+    attention = [f for f in flags.facts if f.label not in orchestrator.HOUSEKEEPING]
+    client = profile.facts[0]
+    primary = [f.value for f in profile.facts if f.source == "coverage" and f.details["coverage_role"] == "primary"]
+    return ClientSummary(client_id=client_id, client_name=client.value, segment=client.details["segment"],
+                         region=client.details["region"], primary_banker=primary[0] if primary else None,
+                         aliases=orchestrator.client_aliases(client_id), meeting_date=AS_OF_DATE,
+                         conflicts=[f.details["title"] for f in attention if f.label == "conflict"],
+                         heads_up=[f.details["title"] for f in attention if f.label != "conflict"])
+
+
+@app.get("/clients", response_model=list[ClientSummary])
+def list_clients(user: CurrentUser):
+    """The meetings list: every client, with what needs checking. No LLM call."""
+    with closing(db.connect()) as conn:
+        client_ids = [row["client_id"] for row in db.clients(conn)]
+    return [s for s in (client_summary(user, cid) for cid in client_ids) if s]
 
 
 @app.get("/clients/resolve", response_model=ResolveResponse)

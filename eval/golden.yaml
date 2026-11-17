@@ -1,3 +1,106 @@
-# Golden set: per client and user, the facts a briefing must include,
-# must flag, and must not include (SPEC.md section 7). Filled in Phase 6.
-[]
+# Golden set for the scorecard (SPEC.md section 7). eval/run_eval.py reads it.
+# `trap` links a case to a planted trap (data/planted_traps.json), so the scorecard
+# can show which check covers each of T1-T12.
+
+# What a banker might type in the search box -> the client it must resolve to.
+# null means it must NOT be resolved: a wrong client is worse than no client.
+aliases:
+  - {name: "NWC", expect: C001, trap: T1}
+  - {name: "Northwind Cap.", expect: C001, trap: T1}
+  - {name: "northwind capital", expect: C001}                  # case doesn't matter
+  - {name: "Northwind Capital Partners LLC", expect: C001, trap: T2}  # the merged duplicate's name
+  - {name: "C014", expect: C001, trap: T2}                     # the merged duplicate's ID
+  - {name: "Northwnd Capital Partners", expect: C001}          # typo: fuzzy match, score >= 90
+  - {name: "HEG", expect: C002}
+  - {name: "Helios Energy Grp", expect: C002}                  # abbreviation: fuzzy match
+  - {name: "AHS", expect: C003}
+  - {name: "Arbor Health", expect: C003}
+  - {name: "Arbor", expect: null, trap: T8}                    # Arbor Health or Arbor Logistics?
+  - {name: "Arbor Logistics", expect: null, trap: T8}          # a different company, not a client
+  - {name: "Zenith Holdings", expect: null}                    # not a client at all
+
+# Which client unify attached each document to (null = attached to none).
+documents:
+  - {doc: note_001, expect: C001, trap: T1}    # calls the client "NWC"
+  - {doc: note_002, expect: C001, trap: T1}    # calls the client "Northwind Cap."
+  - {doc: email_004, expect: C001, trap: T2}   # filed under the duplicate C014
+  - {doc: news_004, expect: C002, trap: T7}    # no client_ref; the text names Helios
+  - {doc: news_005, expect: null, trap: T8}    # about Arbor Logistics
+
+# The flag type that must catch each planted trap (on a source it was planted in).
+trap_flags:
+  T4: stale_statement
+  T5: conflict
+  T6: conflict
+  T8: unresolved_reference
+  T11: excluded_source
+  T12: overdue
+
+# One briefing per client and user.
+#   must_include      facts the briefing must contain (fields are checked in eval/run_eval.py)
+#   must_flag         planted traps it must flag
+#   must_not_include  restricted text: must not appear ANYWHERE in what the user receives
+#   must_not_claim    injected text: may be quoted as a source, but must never be said as a claim
+cases:
+  - client: C001
+    user: u2                      # Sam, standard entitlements
+    must_include:
+      - {field: revenue_latest, value: 5100000, trap: T4}     # the Q3 figure, not the stale $4.2M
+      - {field: cfo, value: "Raj Patel", trap: T5}            # the newer record wins
+      - {field: contact, value: "Priya Shah", trap: T3}       # listed once, not twice
+      - {field: contact, value: "Tom Becker", trap: T2}       # came with the merged duplicate
+      - {field: action, value: A-004, trap: T2}               # came with the merged duplicate
+      - {field: not_live_opportunity, value: OPP-NOR-FX, trap: T6}
+      - {field: live_opportunity, value: OPP-NOR-TM}
+      - {field: overdue_action, value: A-001, trap: T12}
+    must_flag: [T4, T5, T6, T11, T12]
+    must_not_claim:
+      - "triple their mandate"    # T10
+
+  - client: C001
+    user: u1                      # Alex, standard + restricted_deals
+    must_include:
+      - {field: revenue_latest, value: 5100000, trap: T4}
+      - {field: cfo, value: "Raj Patel", trap: T5}
+      - {field: not_live_opportunity, value: OPP-NOR-FX, trap: T6}
+      - {field: overdue_action, value: A-001, trap: T12}
+    must_flag: [T4, T5, T6, T11, T12]
+    must_not_claim:
+      - "triple their mandate"
+
+  - client: C002
+    user: u2
+    must_include:
+      - {field: revenue_latest, value: 3050000}
+      - {field: cfo, value: "Marcus Webb"}
+      - {field: live_opportunity, value: OPP-HEL-GB}
+      - {field: opportunity_count, value: 1, trap: T9}        # the restricted deal isn't counted either
+    must_not_include:             # T9: restricted to restricted_deals
+      - "OPP-HEL-MA"
+      - "note_004"
+      - "M&A"
+      - "acquisition"
+      - "Project Sunrise"
+      - "SunPeak"
+
+  - client: C002
+    user: u1
+    must_include:
+      - {field: revenue_latest, value: 3050000}
+      - {field: opportunity, value: OPP-HEL-MA, trap: T9}     # Alex may see it
+      - {field: opportunity_count, value: 2, trap: T9}
+
+  - client: C003
+    user: u2
+    must_include:
+      - {field: revenue_latest, value: 1950000}
+      - {field: cfo, value: "Susan Okafor"}
+      - {field: live_opportunity, value: OPP-ARB-CM}
+    must_flag: [T8]               # the Arbor Logistics news is listed as unmatched
+
+  - client: C003
+    user: u1
+    must_include:
+      - {field: revenue_latest, value: 1950000}
+      - {field: cfo, value: "Susan Okafor"}
+    must_flag: [T8]

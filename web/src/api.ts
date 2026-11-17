@@ -9,6 +9,19 @@ export type UserInfo = { user_id: string; name: string; role: string; entitlemen
 
 export type ClientInfo = { client_id: string; legal_name: string; segment: string }
 
+// One row of the meetings list (GET /clients): no LLM call, entitlement-filtered like the briefing
+export type ClientSummary = {
+  client_id: string
+  client_name: string
+  segment: string
+  region: string
+  primary_banker: string | null
+  aliases: string[]
+  meeting_date: string
+  conflicts: string[] // titles of conflict flags: the banker decides these in Check
+  heads_up: string[] // other flags that need attention (housekeeping left out)
+}
+
 export type ResolveResponse = {
   query: string
   client: ClientInfo | null // set when the name resolved
@@ -74,6 +87,7 @@ export type FlagRow = {
   flag_type: string
   title: string // e.g. "Who is the CFO?"
   severity: 'low' | 'medium' | 'high'
+  housekeeping: boolean // data clean-up (duplicates, superseded values...): shown collapsed
   detail: string
   source_ids: string[]
   evidence_id: string
@@ -183,10 +197,13 @@ async function request<T>(path: string, userId: string | null, init: RequestInit
 
 export const getUsers = () => request<UserInfo[]>('/users', null)
 
+export const getClients = (userId: string) => request<ClientSummary[]>('/clients', userId)
+
 export const resolveClient = (userId: string, query: string) =>
   request<ResolveResponse>(`/clients/resolve?q=${encodeURIComponent(query)}`, userId)
 
-export const createBriefing = (userId: string, clientId: string, meetingDate: string) =>
+// meetingDate null: the API uses its meeting date (18 Nov 2026 in the demo data)
+export const createBriefing = (userId: string, clientId: string, meetingDate: string | null = null) =>
   request<Briefing>('/briefings', userId, {
     method: 'POST',
     body: JSON.stringify({ client_id: clientId, meeting_date: meetingDate }),

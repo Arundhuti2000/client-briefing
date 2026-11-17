@@ -70,7 +70,44 @@ def test_asks_mark_contradictions_inline_and_do_not_repeat_flags():
     assert "Confirm who the CFO is (records say Raj Patel; a June email says Dana Lee)." in points
     assert "Ask about the $50M FX hedging commitment, since the opportunity was marked Lost." in points
 
+
+def test_full_names_and_the_clients_words_are_reported_not_copied():
+    briefing = orchestrator.build_briefing(tools.load_user("u2"), "C001")
+    said = [b.text for b in next(s for s in briefing.sections if s.id == "client_said").bullets]
+    assert any(t.startswith("Raj Patel said the client has committed to $50M") for t in said)
+    assert any(t.startswith("In a June email, the client said Dana Lee (as CFO) would join the July call")
+               for t in said)  # a past plan, marked as such; no "our"
+    bullets = [b.text for s in briefing.sections for b in s.bullets]
+    assert not any(re.search(r"\b(Raj|Priya)\b(?! (Patel|Shah))", t) for t in bullets)
+    assert not any(re.search(r"\b(our|we|us)\b", t, re.IGNORECASE) for t in bullets)
+
+
+def test_uncertain_panel_puts_data_housekeeping_last():
+    briefing = orchestrator.build_briefing(tools.load_user("u2"), "C001")
+    order = [f.housekeeping for f in briefing.flags]
+    assert order == sorted(order)  # what needs attention first, housekeeping after
+    assert {f.flag_type for f in briefing.flags if not f.housekeeping} == {"conflict", "stale_statement", "overdue"}
+    assert {f.flag_type for f in briefing.flags if f.housekeeping} == {
+        "duplicate_client", "duplicate_contact", "stale", "excluded_source"}
+    markdown = orchestrator.to_markdown(briefing)
+    assert "Data housekeeping (4):\n- Unapproved news source. A news item from MarketWhispers Blog" in markdown
+
 # --- the wording helpers ---------------------------------------------------------------
+
+
+def test_full_names_replace_a_first_name_only_when_it_is_unambiguous():
+    people = ["Raj Patel", "Priya Shah", "Alex Morgan", "Alex Kim"]
+    assert wording.full_names("Raj said Raj's team agreed; Raj Patel too.", people) == \
+        "Raj Patel said Raj Patel's team agreed; Raj Patel too."
+    assert wording.full_names("Priya asked; Rajesh came.", people) == "Priya Shah asked; Rajesh came."
+    assert wording.full_names("Alex met them.", people) == "Alex met them."  # two people called Alex
+
+
+def test_reported_speech_turns_the_clients_words_into_ours():
+    assert wording.reported_speech("Dana Lee, our CFO, will join the July call") == \
+        "Dana Lee (as CFO) would join the July call"
+    assert wording.reported_speech("We can move our US payroll to you") == \
+        "they could move their US payroll to the bank"  # "US" is a country, not "us"
 
 
 def test_dates_read_like_people_write_them():

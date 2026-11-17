@@ -148,6 +148,26 @@ def word_ngrams(text: str, n: int = 5) -> set[tuple[str, ...]]:
     words = re.findall(r"\w+", text.lower())
     return {tuple(words[i:i + n]) for i in range(len(words) - n + 1)}
 
+
+def unsupported_facts(text: str, cited: list[Evidence]) -> tuple[list[str], list[str]]:
+    """Rule 3: the dates and numbers in `text` that are not in the cited evidence, as written.
+    An evidence item's own date counts as being in it. Returns (bad_dates, bad_numbers).
+    Also used by eval/run_eval.py to re-check the finished briefing."""
+    allowed = Found()
+    for e in cited:
+        facts = find_facts(e.text)
+        allowed.dates |= facts.dates | {(e.as_of.year, e.as_of.month, e.as_of.day): ""}
+        allowed.years |= facts.years | {e.as_of.year: ""}
+        allowed.numbers |= facts.numbers
+    allowed.years |= {year: "" for year, _, _ in allowed.dates if year}
+    said = find_facts(text)
+    bad_dates = [written for (year, month, day), written in said.dates.items()
+                 if not any(m == month and d == day and (year is None or y in (None, year))
+                            for y, m, d in allowed.dates)]
+    bad_years = [written for year, written in said.years.items() if year not in allowed.years]
+    bad_numbers = [written for key, written in said.numbers.items() if key not in allowed.numbers]
+    return bad_dates + bad_years, bad_numbers
+
 # ---------------------------------------------------------------------------
 # The checks
 # ---------------------------------------------------------------------------
@@ -190,22 +210,10 @@ def check_section(draft: SectionDraft | None, section: SectionEvidence, hidden: 
             fail(f"{where} cites IDs that are not in this section's evidence: {unknown}",
                  "a statement cited a source it wasn't given")
         # Rule 3: amounts, counts and dates must be in the cited evidence
-        cited = [evidence[c] for c in bullet.citations if c in evidence]
-        allowed = Found()
-        for e in cited:
-            facts = find_facts(e.text)
-            allowed.dates |= facts.dates | {(e.as_of.year, e.as_of.month, e.as_of.day): ""}
-            allowed.years |= facts.years | {e.as_of.year: ""}
-            allowed.numbers |= facts.numbers
-        allowed.years |= {year: "" for year, _, _ in allowed.dates if year}
-        said = find_facts(bullet.text)
-        bad_dates = [written for (year, month, day), written in said.dates.items()
-                     if not any(m == month and d == day and (year is None or y in (None, year))
-                                for y, m, d in allowed.dates)]
-        bad_years = [written for year, written in said.years.items() if year not in allowed.years]
-        bad_numbers = [written for key, written in said.numbers.items() if key not in allowed.numbers]
-        if bad_dates or bad_years:
-            fail(f"{where} has dates not in its cited evidence: {bad_dates + bad_years}",
+        bad_dates, bad_numbers = unsupported_facts(bullet.text, [evidence[c] for c in bullet.citations
+                                                                 if c in evidence])
+        if bad_dates:
+            fail(f"{where} has dates not in its cited evidence: {bad_dates}",
                  "a date wasn't in its source")
         if bad_numbers:
             fail(f"{where} has numbers not in its cited evidence: {bad_numbers}",

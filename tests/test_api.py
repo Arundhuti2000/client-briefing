@@ -115,3 +115,16 @@ def test_cors_allows_only_the_react_dev_server():
         return api.options("/users", headers={"Origin": origin, "Access-Control-Request-Method": "GET"})
     assert preflight("http://localhost:5173").headers.get("access-control-allow-origin") == "http://localhost:5173"
     assert "access-control-allow-origin" not in preflight("https://evil.example").headers
+
+
+def test_clients_lists_meetings_with_what_needs_checking_and_no_llm(monkeypatch):
+    from app import llm
+    monkeypatch.setattr(llm, "write_sections", lambda *a, **k: pytest.fail("the meetings list must not call the LLM"))
+    rows = {r["client_id"]: r for r in api.get("/clients", headers=SAM).json()}
+    assert list(rows) == ["C003", "C002", "C001"]  # by name: Arbor, Helios, Northwind
+    northwind = rows["C001"]
+    assert (northwind["client_name"], northwind["primary_banker"]) == ("Northwind Capital Partners", "Alex Morgan")
+    assert northwind["meeting_date"] == "2026-11-18" and "NWC" in northwind["aliases"]
+    assert northwind["conflicts"] == ["Who is the CFO?", "Is the FX hedging deal still live?"]
+    assert northwind["heads_up"] == ["Revenue figure is out of date", "Overdue action"]  # housekeeping left out
+    assert rows["C002"]["conflicts"] == [] and api.get("/clients").status_code == 401

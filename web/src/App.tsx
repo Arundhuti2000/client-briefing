@@ -1,46 +1,49 @@
-// The briefing workspace (SPEC.md section 6). All logic stays in the Python API;
-// this file only holds the screen's state and lays out the components.
+// The app shell: sidebar + either the meeting queue or one client's briefing workspace.
+// All logic stays in the Python API; this file only holds the screen's state.
 import { useCallback, useEffect, useState } from 'react'
-import { API_BASE, createBriefing, getUsers, resolveClient } from './api'
-import type { Briefing, ClientInfo, ResolveResponse, UserInfo } from './api'
+import { API_BASE, createBriefing, getClients, getUsers, resolveClient } from './api'
+import type { Briefing, ClientSummary, UserInfo } from './api'
 import { errorMessage } from './format'
-import { AppBar } from './components/AppBar'
+import { loadProgress, saveProgress } from './progress'
+import type { Progress } from './progress'
 import { AuditDrawer } from './components/AuditDrawer'
 import { BriefingPage } from './components/BriefingPage'
-import { Toolbar } from './components/Toolbar'
-import { Welcome } from './components/Welcome'
+import type { Step } from './components/BriefingPage'
+import { MeetingsPage } from './components/MeetingsPage'
+import { Sidebar } from './components/Sidebar'
 
-const DEMO_MEETING_DATE = '2026-11-18'
-const linkParams = new URLSearchParams(window.location.search) // optional deep link: ?user=u2&client=NWC
+const STEPS: Step[] = ['gather', 'check', 'read', 'share']
+const linkParams = new URLSearchParams(window.location.search) // optional deep link: ?user=u2&client=NWC&step=read
 const INITIAL_USER = linkParams.get('user') ?? 'u2'
 let deepLinkHandled = false // React's dev mode runs effects twice; generate only once (one LLM call)
 
 function App() {
   const [users, setUsers] = useState<UserInfo[]>([])
   const [userId, setUserId] = useState(INITIAL_USER)
-  const [query, setQuery] = useState(linkParams.get('client') ?? 'Northwind Cap.')
-  const [resolved, setResolved] = useState<ResolveResponse | null>(null)
-  const [meetingDate, setMeetingDate] = useState(DEMO_MEETING_DATE)
-  const [briefing, setBriefing] = useState<Briefing | null>(null)
-  const [loading, setLoading] = useState(false)
+  const [clients, setClients] = useState<ClientSummary[] | null>(null)
+  const [clientId, setClientId] = useState<string | null>(null) // null: the meetings page
+  const [step, setStep] = useState<Step>('gather')
+  const [briefings, setBriefings] = useState<Record<string, Briefing>>({}) // "user:client" -> briefing
+  const [loadingKey, setLoadingKey] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<Record<string, Progress>>({})
   const [auditOpen, setAuditOpen] = useState(false)
 
-  const generate = useCallback(
-    async (forUser: string, clientId: string) => {
-      setLoading(true)
-      setError(null)
-      try {
-        setBriefing(await createBriefing(forUser, clientId, meetingDate))
-      } catch (e) {
-        setBriefing(null)
-        setError(errorMessage(e))
-      } finally {
-        setLoading(false)
-      }
-    },
-    [meetingDate],
-  )
+  const key = (forUser: string, id: string) => `${forUser}:${id}`
+
+  const generate = useCallback(async (forUser: string, id: string) => {
+    const k = key(forUser, id)
+    setLoadingKey(k)
+    setError(null)
+    try {
+      const b = await createBriefing(forUser, id)
+      setBriefings((all) => ({ ...all, [k]: b }))
+    } catch (e) {
+      setError(errorMessage(e))
+    } finally {
+      setLoadingKey((current) => (current === k ? null : current))
+    }
+  }, [])
 
   useEffect(() => {
     getUsers()
@@ -49,76 +52,103 @@ function App() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    getClients(userId)
+      .then((c) => !cancelled && setClients(c))
+      .catch((e) => !cancelled && setError(errorMessage(e)))
+    return () => {
+      cancelled = true
+    }
+  }, [userId])
+
+  useEffect(() => {
     // Deep link: resolve the client and generate straight away, once
-    const client = linkParams.get('client')
-    if (!client || deepLinkHandled) return
+    const name = linkParams.get('client')
+    if (!name || deepLinkHandled) return
     deepLinkHandled = true
-    resolveClient(INITIAL_USER, client)
+    const linkStep = STEPS.find((s) => s === linkParams.get('step')) ?? 'gather'
+    resolveClient(INITIAL_USER, name)
       .then((r) => {
-        setResolved(r)
-        if (r.client) return generate(INITIAL_USER, r.client.client_id)
+        if (!r.client) return setError(`No client matches “${name}” confidently.`)
+        setClientId(r.client.client_id)
+        setStep(linkStep)
+        return generate(INITIAL_USER, r.client.client_id)
       })
       .catch((e) => setError(errorMessage(e)))
   }, [generate])
 
-  function changeUser(id: string) {
-    setUserId(id)
-    setBriefing(null) // never show one user's briefing to another
+  const progressOf = (id: string) => progress[id] ?? loadProgress(userId, id)
+
+  function updateProgress(id: string, change: Partial<Progress>) {
+    const next = { ...progressOf(id), ...change }
+    saveProgress(userId, id, next)
+    setProgress((all) => ({ ...all, [id]: next }))
   }
 
-  async function find(name: string = query) {
+  function goTo(id: string, s: Step) {
+    setStep(s)
+    if (s === 'read') updateProgress(id, { read: true })
+  }
+
+  function open(id: string, s: Step) {
+    setClientId(id)
     setError(null)
-    if (!name.trim()) return // nothing typed: don't send an empty query to the API
-    try {
-      setResolved(await resolveClient(userId, name.trim()))
-    } catch (e) {
-      setError(errorMessage(e))
-    }
+    goTo(id, s)
+    if (!briefings[key(userId, id)]) generate(userId, id)
   }
 
-  function pickQuick(name: string) {
-    setQuery(name)
-    find(name)
+  function changeUser(id: string) {
+    // Never show one user's briefing, progress or meetings to another
+    setUserId(id)
+    setClients(null)
+    setBriefings({})
+    setProgress({})
+    setClientId(null)
+    setError(null)
   }
 
-  function pickCandidate(client: ClientInfo) {
-    setResolved({ query, client, matched_by: 'picked', error: null, candidates: [] })
-  }
-
+  const me = users.find((u) => u.user_id === userId)
   return (
-    <div className="app">
-      <AppBar users={users} userId={userId} onUserChange={changeUser} onToggleAudit={() => setAuditOpen((o) => !o)} />
-      <main className="page">
-        <Toolbar
-          query={query}
-          onQueryChange={setQuery}
-          onFind={() => find()}
-          resolved={resolved}
-          onPickCandidate={pickCandidate}
-          meetingDate={meetingDate}
-          onMeetingDateChange={setMeetingDate}
-          onGenerate={() => resolved?.client && generate(userId, resolved.client.client_id)}
-          loading={loading}
-        />
-        {error && <p className="note note-unavailable">{error}</p>}
-        {loading && (
-          <p className="note">
-            Generating: the tools run first, then one LLM call; every section is validated before it is shown…
-          </p>
-        )}
-        {!briefing && !loading && <Welcome onPick={pickQuick} />}
-        {briefing && (
+    <div className="shell">
+      <Sidebar
+        users={users}
+        userId={userId}
+        onUserChange={changeUser}
+        meetingCount={clients ? clients.length : null}
+        onMeetings={() => setClientId(null)}
+        onAudit={() => setAuditOpen((o) => !o)}
+        onMeetingsPage={clientId === null}
+      />
+      <main className="main">
+        {clientId === null ? (
+          <>
+            {error && <p className="note note-error" style={{ maxWidth: 1180, margin: '0 auto 16px' }}>{error}</p>}
+            <MeetingsPage
+              clients={clients}
+              firstName={me ? me.name.split(' ')[0] : ''}
+              userId={userId}
+              progressOf={progressOf}
+              onOpen={open}
+            />
+          </>
+        ) : (
           <BriefingPage
-            key={`${briefing.user_id}-${briefing.client_id}`}
-            briefing={briefing}
+            key={key(userId, clientId)}
             userId={userId}
-            meetingDate={meetingDate}
-            loading={loading}
-            onRegenerate={() => generate(userId, briefing.client_id)}
+            summary={clients?.find((c) => c.client_id === clientId)}
+            briefing={briefings[key(userId, clientId)] ?? null}
+            loading={loadingKey === key(userId, clientId)}
+            error={error}
+            step={step}
+            progress={progressOf(clientId)}
+            onStep={(s) => goTo(clientId, s)}
+            onProgress={(change) => updateProgress(clientId, change)}
+            onBack={() => setClientId(null)}
+            onRetry={() => generate(userId, clientId)}
           />
         )}
       </main>
-      {auditOpen && <AuditDrawer key={userId} userId={userId} onClose={() => setAuditOpen(false)} />}
+      {auditOpen && <AuditDrawer key={userId} userId={userId} userName={me?.name ?? ''} onClose={() => setAuditOpen(false)} />}
     </div>
   )
 }

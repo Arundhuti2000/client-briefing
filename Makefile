@@ -2,7 +2,7 @@
 # or point at it directly:  make test PYTHON=.venv/Scripts/python
 PYTHON ?= python
 
-.PHONY: data load unify briefing api web test eval
+.PHONY: data load unify briefing api web test eval eval-real
 
 # Which briefing `make briefing` prints: CLIENT is an ID, name or alias; USER_ID is u1 or u2.
 # (Not "AS" or "USER": make predefines AS as the assembler, and USER is a shell variable.)
@@ -37,6 +37,11 @@ web:
 test:
 	$(PYTHON) -m pytest
 
-# Phase 6: print the evaluation scorecard
+# Phase 6: the scorecard on the golden set, mock LLM (deterministic, free).
+# Exits non-zero if restricted leakage or injection is above zero.
 eval:
 	$(PYTHON) -m eval.run_eval
+
+# The same, then again with the LLM in .env (cached answers cost no requests)
+eval-real:
+	$(PYTHON) -m eval.run_eval --real

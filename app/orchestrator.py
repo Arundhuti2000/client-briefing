@@ -27,8 +27,8 @@ from app import audit, db, llm, tools, validate
 from app.tools import Fact, UserContext
 from app.validate import Bullet, Check, Evidence, Hidden, SectionDraft, SectionEvidence
 from app.wording import (AS_OF_DATE, DOC_NAMES, article, capitalize, change_words, clean_note, day_month,
-                         days_before, first_lower, format_usd, join_words, long_date, month_of, period_text,
-                         plain_words, signed_change, value_text)
+                         days_before, first_lower, format_usd, full_names, join_words, long_date, month_of,
+                         period_text, plain_words, signed_change, value_text)
 
 # The fixed plan: seven questions, then talking points. (id, title, question)
 PLAN = [
@@ -56,6 +56,9 @@ ASKS_QUERY = "client asked requested wants would like committed next steps"
 NEWS_WINDOW_DAYS = 90
 STAGE_PROBABILITY = {"Discovery": 0.2, "Proposal": 0.5, "Negotiation": 0.8}  # live stages only
 SEVERITY_ORDER = {"high": 0, "medium": 1, "low": 2}
+# Flags that are data clean-up, not something to raise at the meeting: shown collapsed,
+# under "Data housekeeping". Conflicts, stale statements and overdue actions stay on top.
+HOUSEKEEPING = {"duplicate_client", "duplicate_contact", "stale", "excluded_source", "unresolved_reference"}
 AI_PROVIDERS = {"gemini", "ollama"}  # only these count as "AI written"; mock is a template
 
 # ---------------------------------------------------------------------------
@@ -119,6 +122,7 @@ class FlagRow(BaseModel):
     flag_type: str
     title: str                          # e.g. "Who is the CFO?"
     severity: str
+    housekeeping: bool                  # data clean-up, shown collapsed (see HOUSEKEEPING)
     detail: str
     source_ids: list[str]
     evidence_id: str
@@ -419,7 +423,8 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
     facts = {name: r.facts for name, r in results.items()}
 
     # 2. Evidence, ranked and filtered by code
-    flags = sorted(facts["uncertain"], key=lambda f: (SEVERITY_ORDER[f.details["severity"]], f.evidence_id))
+    flags = sorted(facts["uncertain"], key=lambda f: (f.label in HOUSEKEEPING, SEVERITY_ORDER[f.details["severity"]],
+                                                      f.evidence_id))
     ranked = rank_opportunities(facts["opportunities"])
     not_live = [f for f in facts["opportunities"] if f not in ranked]
     open_items = [f for f in facts["open_items"] if f.details["status"] == "Open"]
@@ -488,7 +493,12 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
                     drafts[bundle.section] = llm.evidence_bullets(bundle)
                     written_by[bundle.section], author[bundle.section] = "evidence (fallback)", "evidence"
 
-    # Assemble the sections, validating the code-written ones too
+    # Full names, whoever wrote the bullet: "Raj said" -> "Raj Patel said"
+    people = [f.value for f in facts["client_overview"] if f.source in ("contacts", "coverage")]
+    drafts = {name: [b.model_copy(update={"text": full_names(b.text, people)}) for b in bullets]
+              for name, bullets in drafts.items()}
+
+    # Assemble the sections, validating every one (again) on its final text
     sections = []
     for name, title, question in PLAN:
         section = Section(id=name, title=title, question=question)
@@ -509,8 +519,10 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
                 section.status, section.note = "empty", "Nothing on file for this question."
         sections.append(section)
 
+    # Everything a chip can open: the bundles, new documents, and every row of the actions
+    # table (done actions are shown there but are not evidence for any section)
     all_evidence = merge([e for b in bundles.values() for e in b.evidence]
-                         + [to_evidence(f, caveats) for f in recent_docs])
+                         + [to_evidence(f, caveats) for f in recent_docs + facts["open_items"]])
     return Briefing(
         client_id=client_id, client_name=client.value, segment=client.details["segment"],
         region=client.details["region"], user_id=user.user_id, prepared_for=prepared_for(user),
@@ -535,7 +547,7 @@ def build_briefing(user: UserContext, client_id: str, meeting_date: dt.date | No
                            evidence_id=f.evidence_id)
                  for f in facts["open_items"] if f.source == "open_actions"],
         flags=[FlagRow(flag_id=f.evidence_id.removeprefix("FLAG:"), flag_type=f.label, title=f.details["title"],
-                       severity=f.details["severity"], detail=f.value, source_ids=f.details["source_ids"],
+                       severity=f.details["severity"], housekeeping=f.label in HOUSEKEEPING, detail=f.value, source_ids=f.details["source_ids"],
                        evidence_id=f.evidence_id) for f in flags],
         evidence={e.evidence_id: e for e in all_evidence},
         llm_runs=[LLMRun(provider=r.provider, model=r.model, cached=r.cached, notes=r.notes) for r in runs],
@@ -579,7 +591,13 @@ def to_markdown(b: Briefing) -> str:
         if s.retry_note:
             lines += [f"> {s.retry_note}", ""]
         if s.id == "uncertain":
-            lines += [f"- **{f.title}** {f.detail} {cite([f.evidence_id])}" for f in b.flags]
+            housekeeping = [f for f in b.flags if f.housekeeping]
+            lines += [f"- **{f.title}** {f.detail} {cite([f.evidence_id])}" for f in b.flags if not f.housekeeping]
+            if housekeeping and len(housekeeping) == len(b.flags):
+                lines.append("Nothing to raise at the meeting.")
+            if housekeeping:
+                lines += ["", f"Data housekeeping ({len(housekeeping)}):",
+                          *[f"- {f.title}. {f.detail} {cite([f.evidence_id])}" for f in housekeeping]]
         else:
             lines += [f"- {bullet.text} {cite(bullet.citations)}" for bullet in s.bullets]
         lines.append("")

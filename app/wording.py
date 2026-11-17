@@ -7,6 +7,7 @@ Numbers still come from SQL; these helpers only format them.
 
 import datetime as dt
 import re
+from collections import Counter
 
 AS_OF_DATE = dt.date(2026, 11, 18)  # demo "today" = the meeting date; in production, the run date
 
@@ -100,6 +101,31 @@ def first_lower(text: str) -> str:
     """'Send Q3 analysis' -> 'send Q3 analysis' (an acronym like 'FX' stays as it is)"""
     first = text.split(" ", 1)[0]
     return text if first.isupper() and len(first) > 1 else text[:1].lower() + text[1:]
+
+
+def full_names(text: str, people: list[str]) -> str:
+    """'Raj said' -> 'Raj Patel said': a first name on its own becomes the person's full name,
+    when only one of the known people has that first name."""
+    first_names = Counter(name.split()[0] for name in people)
+    for name in people:
+        first, _, rest = name.partition(" ")
+        if rest and first_names[first] == 1:
+            text = re.sub(rf"\b{re.escape(first)}\b(?! {re.escape(rest)})", name, text)
+    return text
+
+
+CLIENT_VOICE = re.compile(r"\b(?:[Oo]ur|[Ww]e|us)\b")                     # the client speaking ("US" is a country)
+CLIENT_TITLE = re.compile(r"\b([A-Z][a-z]+ [A-Z][a-z]+), our ([^,]+),")   # "Dana Lee, our CFO,"
+REPORTED = {"our": "their", "we": "they", "us": "them", "your": "the bank's", "you": "the bank",
+            "will": "would", "can": "could"}
+
+
+def reported_speech(sentence: str) -> str:
+    """The client's own words, reported, so 'our' doesn't read as the bank's and 'will' doesn't
+    read as still to come: 'Dana Lee, our CFO, will join the July call' ->
+    'Dana Lee (as CFO) would join the July call'."""
+    text = CLIENT_TITLE.sub(r"\1 (as \2)", sentence)
+    return re.sub(r"\b(?:[Oo]ur|[Ww]e|us|[Yy]our|[Yy]ou|will|can)\b", lambda m: REPORTED[m[0].lower()], text)
 
 
 def plain_words(text: str) -> str:

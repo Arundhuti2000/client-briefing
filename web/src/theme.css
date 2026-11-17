@@ -1,0 +1,103 @@
+/* The design's visual language in one place: every colour, font, radius and shadow
+   the app uses is a variable here. index.css only refers to these names. */
+:root {
+  /* Type: Geist for text, Geist Mono for numbers and IDs (loaded in index.html) */
+  --font-sans: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'Cascadia Mono', monospace;
+
+  /* Zinc greys */
+  --text: #0b0b0f;
+  --text-body: #27272a;
+  --text-strong: #3f3f46;
+  --text-2: #52525b; /* secondary */
+  --text-3: #71717a; /* tertiary, labels */
+  --line: #e4e4e7; /* borders */
+  --line-soft: #f4f4f5; /* row dividers */
+  --bg: #f7f7f8; /* page */
+  --bg-muted: #f4f4f5; /* tracks, inactive fills */
+  --surface: #ffffff;
+  --ink: #18181b; /* primary buttons, logo */
+
+  /* Indigo accent (named --indigo: shadcn uses --accent for grey hovers) */
+  --indigo: #4f46e5;
+  --indigo-strong: #4338ca;
+  --indigo-dot: #6366f1;
+  --indigo-soft: #eef2ff;
+  --indigo-faint: #f5f7ff;
+  --indigo-border: #c7d2fe;
+
+  /* Amber: warnings, things that need the banker */
+  --warn: #b45309;
+  --warn-dot: #f59e0b;
+  --warn-soft: #fef3c7;
+  --warn-panel: #fffbeb;
+  --warn-ink: #78350f;
+  --warn-ink-2: #451a03;
+
+  /* Green: good, done */
+  --good: #15803d;
+  --good-dot: #22c55e;
+  --good-soft: #dcfce7;
+  --good-panel: #f0fdf4;
+  --good-border: #bbf7d0;
+  --good-ink: #14532d;
+
+  /* Red: overdue, failed */
+  --bad: #b91c1c;
+  --bad-dot: #ef4444;
+  --bad-soft: #fee2e2;
+  --bad-ink: #991b1b;
+
+  /* Shape */
+  --radius-sm: 8px;
+  --radius-md: 10px; /* buttons, inputs */
+  --radius-lg: 14px;
+  --radius-xl: 16px; /* cards */
+  --radius: 10px; /* shadcn's base radius */
+  --shadow: 0 1px 2px rgba(16, 16, 24, 0.04);
+  --shadow-raised: 0 1px 2px rgba(16, 16, 24, 0.1);
+
+  /* shadcn/ui's names, mapped onto the palette above (its components read these) */
+  --background: var(--surface); /* shadcn fills buttons and inputs with this; the page itself stays --bg */
+  --foreground: var(--text);
+  --card: var(--surface);
+  --card-foreground: var(--text);
+  --popover: var(--surface);
+  --popover-foreground: var(--text);
+  --primary: var(--ink);
+  --primary-foreground: var(--surface);
+  --secondary: var(--bg-muted);
+  --secondary-foreground: var(--text);
+  --muted: var(--bg-muted);
+  --muted-foreground: var(--text-3);
+  --accent: var(--bg-muted);
+  --accent-foreground: var(--text);
+  --destructive: var(--bad);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--indigo);
+}
+
+/* The same names as Tailwind colours, so shadcn's classes (bg-primary, text-muted-foreground,
+   border-input...) resolve to the variables above. Fonts and radii above already use
+   Tailwind's names (--font-sans, --radius-md...), so they apply to Tailwind classes too. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
