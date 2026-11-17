@@ -52,7 +52,7 @@ export function Toolbar(props: Props) {
       <div className="toolbar-result" aria-live="polite">
         {r?.client && (
           <span>
-            “{r.query}” → <strong>{r.client.legal_name}</strong> ({r.client.client_id}) ·{' '}
+            “{r.query}” → <strong>{r.client.legal_name}</strong> ·{' '}
             <span className="muted">{MATCHED_BY[r.matched_by ?? ''] ?? r.matched_by}</span>
           </span>
         )}

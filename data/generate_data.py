@@ -125,7 +125,7 @@ PERFORMANCE = [
 PIPELINE_OPPORTUNITIES = [
     ["opp_id", "client_name", "product", "stage", "est_value_usd", "owner", "next_step", "updated_at", "restricted", "required_entitlement"],
     # T6: the Sep 15 note says the client "committed" to FX hedging, but the pipeline says Lost
-    ["OPP-NOR-FX", "Northwind Capital Partners", "FX Hedging", "LOST", "350000", "Jordan Kim", "None - client chose another provider", "2026-10-20 16:05:00", "0", "standard"],
+    ["OPP-NOR-FX", "Northwind Capital Partners", "FX Hedging", "LOST", "350000", "Jordan Kim", "None - the client chose another provider", "2026-10-20 16:05:00", "0", "standard"],
     ["OPP-NOR-TM", "Northwind Capital", "Treasury Management", "Proposal", "420000", "Alex Morgan", "Present liquidity sweep proposal at November meeting", "2026-10-28 10:40:00", "0", "standard"],
     ["OPP-NOR-CF", "Northwind Capital Partners", "Credit Facility Upsize", "discovery", "600000", "Alex Morgan", "Confirm sizing with Raj Patel", "2026-08-30 13:20:00", "0", "standard"],
     # T9: restricted M&A opportunity, visible only with restricted_deals

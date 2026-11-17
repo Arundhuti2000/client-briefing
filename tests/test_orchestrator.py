@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from app import db, llm, orchestrator, tools
+from app import audit, db, llm, orchestrator, tools
 from app.orchestrator import PLAN, BriefingError, build_briefing
 from app.tools import ToolResult
 
@@ -40,6 +40,8 @@ def test_full_briefing_in_mock_mode(northwind):
     assert [s.id for s in northwind.sections] == [name for name, _, _ in PLAN]
     assert all(s.check.passed and s.status == "ok" for s in northwind.sections)
     assert {s.written_by for s in northwind.sections} == {"mock", "code"}
+    assert {s.author for s in northwind.sections} == {"template", "code"}  # mock is never labelled AI
+    assert northwind.prepared_for == "Sam Rivera (Analyst)"
     cited = {c for s in northwind.sections for b in s.bullets for c in b.citations}
     assert cited and cited <= set(northwind.evidence)  # every citation chip opens something
 
@@ -60,9 +62,10 @@ def test_numbers_come_from_sql_and_are_formatted_in_code(northwind):
 def test_what_changed_since_the_last_interaction(northwind):
     assert northwind.last_interaction == dt.date(2026, 9, 15)
     changes = [c.text for c in northwind.what_changed]
-    assert changes[0] == "Revenue: $5.1M (+$300K since 2026-09-15)"
-    assert "New since 2026-09-15: 3 emails, 2 news items" in changes
-    assert "New action: Schedule treasury management workshop (owner Alex Morgan, due 2026-11-25)" in changes
+    assert changes[0] == "Revenue is $5.1M, up $300K since 15 Sep."
+    assert "3 emails and 2 news items since 15 Sep." in changes
+    assert "New action for Alex Morgan: schedule treasury management workshop, due 25 Nov." in changes
+    assert "FX Hedging opportunity marked Lost on 20 Oct." in changes
 
 
 def test_opportunities_ranked_by_code_and_lost_is_not_live(northwind):
@@ -115,19 +118,26 @@ def test_invented_number_is_retried_once_then_falls_back_to_evidence(sam, monkey
     monkeypatch.setattr(llm, "write_sections", fake_write_sections)
     briefing = build_briefing(sam, "C001")
     assert len(calls) == 2 and calls[1][0] == ["opportunities"]  # only the failed section is retried
-    assert "numbers or dates not in its cited evidence" in calls[1][1]["opportunities"][0]
+    assert "numbers not in its cited evidence: ['$9M']" in calls[1][1]["opportunities"][0]
     section = next(s for s in briefing.sections if s.id == "opportunities")
     assert (section.status, section.written_by, section.check.passed) == ("fallback", "evidence (fallback)", True)
-    assert "numbers or dates not in its cited evidence" in section.retry_errors[0]  # shown to the user
-    assert "$9M" not in generated_text(briefing)
+    assert section.retry_note == ("First draft rejected: a number wasn't in its source. The second draft "
+                                  "failed too, so this shows the source facts directly.")
+    assert "$9M" in section.retry_errors[0]  # technical detail, behind "Details"
+    rejected = [r for r in audit.recent(20) if r["tool"] == "validator"]
+    assert rejected and "$9M" in rejected[0]["error"]  # and in the audit log
+    assert not any("$9M" in bullet.text for s in briefing.sections for bullet in s.bullets)  # never displayed
     assert next(s for s in briefing.sections if s.id == "news").written_by == "fake-model"
 
 
 def test_markdown_export(northwind):
     markdown = orchestrator.to_markdown(northwind)
-    assert markdown.startswith("# Client briefing: Northwind Capital Partners (C001)")
+    assert markdown.startswith("# Northwind Capital Partners")
+    assert "prepared for Sam Rivera (Analyst)" in markdown
     assert "## Uncertain, conflicting, or unavailable" in markdown
-    assert "| Revenue | $5.1M | +$300K | 2026-10-16 |" in markdown
+    assert "- **Who is the CFO?** A June email names Dana Lee" in markdown
+    assert "| Revenue | $5.1M | +$300K | 16 Oct 2026 |" in markdown
+    assert "## Sources" in markdown and "1. " in markdown  # numbered footnotes instead of IDs
 
 
 def test_unknown_client_is_an_error(sam):

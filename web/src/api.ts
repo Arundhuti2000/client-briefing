@@ -19,7 +19,7 @@ export type ResolveResponse = {
 
 export type Bullet = { text: string; citations: string[] }
 
-export type Check = { passed: boolean; errors: string[] }
+export type Check = { passed: boolean; errors: string[]; reasons: string[] }
 
 export type Section = {
   id: string
@@ -27,9 +27,11 @@ export type Section = {
   question: string
   bullets: Bullet[]
   written_by: string // code, mock, a model name, or "evidence (fallback)"
+  author: 'ai' | 'template' | 'code' | 'evidence' // what the label says: AI only when a real model wrote it
   status: 'ok' | 'empty' | 'unavailable' | 'fallback'
   check: Check
-  retry_errors: string[] // why the model's first draft failed, if it did
+  retry_note: string | null // plain: "First draft rejected: a date wasn't in its source. Regenerated and verified."
+  retry_errors: string[] // technical detail of that rejection, for the Details box
   note: string | null
 }
 
@@ -70,6 +72,7 @@ export type ActionRow = {
 export type FlagRow = {
   flag_id: string
   flag_type: string
+  title: string // e.g. "Who is the CFO?"
   severity: 'low' | 'medium' | 'high'
   detail: string
   source_ids: string[]
@@ -83,6 +86,9 @@ export type Evidence = {
   text: string
   as_of: string
   source: string | null // e.g. Reuters, crm_notes, revenue_metrics
+  suggestion: string | null // how this reads as a talking point
+  caveat: string | null // why a flag says this document is contradicted
+  caveat_id: string | null
 }
 
 export type LLMRun = { provider: string; model: string; cached: boolean; notes: string[] }
@@ -93,6 +99,7 @@ export type Briefing = {
   segment: string
   region: string
   user_id: string
+  prepared_for: string // "Sam Rivera (Analyst)"
   meeting_date: string
   last_interaction: string | null
   coverage: string[]

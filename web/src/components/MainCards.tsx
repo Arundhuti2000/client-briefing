@@ -6,7 +6,7 @@ import { createTask } from '../api'
 import type { Briefing, Section, Task } from '../api'
 import type { Cite } from '../cite'
 import { errorMessage, shortDate } from '../format'
-import { Bullets, Card, Chips, SectionBadge, SectionNotes } from './Card'
+import { BulletText, Bullets, Card, Chips, SectionBadge, SectionNotes } from './Card'
 
 type Props = { briefing: Briefing; cite: Cite }
 
@@ -199,9 +199,10 @@ export function OpportunitiesCard({ briefing: b, cite }: Props) {
   const s = sectionOf(b, 'opportunities')
   const live = b.opportunities.filter((o) => o.live)
   const notLive = b.opportunities.filter((o) => !o.live)
-  const liveIds = new Set(live.map((o) => o.evidence_id))
+  const oppIds = new Set(b.opportunities.map((o) => o.evidence_id))
   const bullets = s?.bullets ?? []
-  const other = bullets.filter((bullet) => !bullet.citations.some((c) => liveIds.has(c)))
+  // Bullets about no particular opportunity; ones about a Lost/Won deal are covered by its row
+  const other = bullets.filter((bullet) => !bullet.citations.some((c) => oppIds.has(c)))
   return (
     <Card title="Opportunities to discuss" badges={<SectionBadge section={s} />}>
       <SectionNotes section={s} />
@@ -218,13 +219,13 @@ export function OpportunitiesCard({ briefing: b, cite }: Props) {
               <span className="muted">· {o.owner}</span>
               <Chips ids={[o.evidence_id]} cite={cite} />
             </div>
-            <p className="opp-next">Next step: {o.next_step}</p>
+            {o.next_step && <p className="opp-next">Next step: {o.next_step}</p>}
             {why.length > 0 && (
               <div className="evidence-box">
                 <span className="eyebrow">Why now</span>
                 {why.map((bullet, i) => (
                   <div key={i} className="evidence-line">
-                    <span>{bullet.text}</span> <Chips ids={bullet.citations} cite={cite} />
+                    <BulletText text={bullet.text} /> <Chips ids={bullet.citations} cite={cite} />
                   </div>
                 ))}
               </div>
@@ -239,14 +240,15 @@ export function OpportunitiesCard({ briefing: b, cite }: Props) {
           {notLive.map((o) => (
             <div key={o.opp_id} className="evidence-line">
               <span>
-                {o.product}: {o.stage} ({o.next_step})
+                {o.product} — {o.stage}
+                {o.next_step ? `: ${o.next_step}.` : '.'}
               </span>{' '}
               <Chips ids={[o.evidence_id]} cite={cite} />
             </div>
           ))}
           {other.map((bullet, i) => (
             <div key={i} className="evidence-line">
-              <span>{bullet.text}</span> <Chips ids={bullet.citations} cite={cite} />
+              <BulletText text={bullet.text} /> <Chips ids={bullet.citations} cite={cite} />
             </div>
           ))}
         </div>
@@ -288,16 +290,6 @@ export function NewsCard({ briefing: b, cite }: Props) {
   )
 }
 
-const FLAG_LABELS: Record<string, string> = {
-  stale_statement: 'Stale figure',
-  stale: 'Superseded values',
-  overdue: 'Overdue',
-  excluded_source: 'Excluded source',
-  duplicate_client: 'Merged duplicate',
-  duplicate_contact: 'Duplicate contact',
-  unresolved_reference: 'Unmatched reference',
-}
-
 export function UncertainCard({ briefing: b, cite }: Props) {
   const s = sectionOf(b, 'uncertain')
   const conflicts = b.flags.filter((f) => f.flag_type === 'conflict')
@@ -320,6 +312,7 @@ export function UncertainCard({ briefing: b, cite }: Props) {
         <div key={f.flag_id} className="conflict">
           <div className="conflict-head">
             <span className="tag tag-conflict">Conflict</span>
+            <strong>{f.title}</strong>
             <Chips ids={[f.evidence_id, ...f.source_ids]} cite={cite} />
           </div>
           <p>{f.detail}</p>
@@ -328,9 +321,9 @@ export function UncertainCard({ briefing: b, cite }: Props) {
       <div className="gaps">
         {others.map((f) => (
           <div key={f.flag_id} className="gap">
-            <span className={`pill severity-${f.severity}`}>{FLAG_LABELS[f.flag_type] ?? f.flag_type}</span>
+            <span className={`pill severity-${f.severity}`}>{f.severity}</span>
             <span>
-              {f.detail} <Chips ids={[f.evidence_id, ...f.source_ids]} cite={cite} />
+              <strong>{f.title}.</strong> {f.detail} <Chips ids={[f.evidence_id, ...f.source_ids]} cite={cite} />
             </span>
           </div>
         ))}

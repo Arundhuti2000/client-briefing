@@ -112,24 +112,26 @@ def visible_flag(conn, flag_id: str, entitlements: list[str]) -> sqlite3.Row | N
 # --- numbers --------------------------------------------------------------------
 
 # Every metric series for one client, oldest first. Evidence IDs match app/unify.py.
+# The label people see is built from (source, product, metric) by wording.metric_label.
 METRIC_ROWS_SQL = """
-SELECT 'Revenue' AS series, 'SQL:revenue_metrics:' || client_id || ':' || period AS evidence_id,
-       revenue_usd AS value, 'usd' AS unit, period, as_of, 'revenue_metrics' AS source
+SELECT 'revenue_metrics' AS source, NULL AS product, 'revenue_usd' AS metric,
+       'SQL:revenue_metrics:' || client_id || ':' || period AS evidence_id,
+       revenue_usd AS value, 'usd' AS unit, period, as_of
   FROM revenue_metrics WHERE client_id = :client_id
 UNION ALL
-SELECT 'Wallet share', 'SQL:revenue_metrics:' || client_id || ':' || period,
-       wallet_share_pct, 'pct', period, as_of, 'revenue_metrics'
+SELECT 'revenue_metrics', NULL, 'wallet_share_pct', 'SQL:revenue_metrics:' || client_id || ':' || period,
+       wallet_share_pct, 'pct', period, as_of
   FROM revenue_metrics WHERE client_id = :client_id
 UNION ALL
-SELECT product || ' balance', 'SQL:holdings:' || client_id || ':' || product || ':' || as_of,
-       balance_usd, 'usd', NULL, as_of, 'holdings'
+SELECT 'holdings', product, NULL, 'SQL:holdings:' || client_id || ':' || product || ':' || as_of,
+       balance_usd, 'usd', NULL, as_of
   FROM holdings WHERE client_id = :client_id
 UNION ALL
-SELECT product || ' ' || replace(replace(replace(metric, '_usd', ''), '_pct', ''), '_', ' '),
+SELECT 'performance', product, metric,
        'SQL:performance:' || client_id || ':' || product || ':' || metric || ':' || period,
-       value, CASE WHEN metric LIKE '%pct' THEN 'pct' ELSE 'usd' END, period, as_of, 'performance'
+       value, CASE WHEN metric LIKE '%pct' THEN 'pct' ELSE 'usd' END, period, as_of
   FROM performance WHERE client_id = :client_id
-ORDER BY series, as_of
+ORDER BY source, product, metric, as_of
 """
 
 

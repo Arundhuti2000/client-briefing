@@ -56,7 +56,8 @@ def test_briefing_differs_by_user():
     assert "OPP-HEL-MA" in for_alex.text
     body = for_sam.json()
     assert len(body["sections"]) == 8 and all(s["check"]["passed"] for s in body["sections"])
-    assert body["markdown"].startswith("# Client briefing: Helios Energy Group (C002)")
+    assert body["markdown"].startswith("# Helios Energy Group")
+    assert body["prepared_for"] == "Sam Rivera (Analyst)"
 
 
 def test_briefing_errors():

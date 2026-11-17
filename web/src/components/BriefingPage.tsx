@@ -52,8 +52,8 @@ export function BriefingPage({ briefing: b, userId, meetingDate, loading, onRege
             <span className={`pill ${status.tone}`}>{status.label}</span>
           </div>
           <p className="muted">
-            {b.client_id} · Meeting {shortDate(b.meeting_date)} · Last interaction {shortDate(b.last_interaction)} ·
-            Prepared for {b.user_id}
+            Meeting {shortDate(b.meeting_date)} · Last interaction {shortDate(b.last_interaction)} · Prepared for{' '}
+            {b.prepared_for}
           </p>
           <div className="people">
             <span className="strong">Key contacts</span>

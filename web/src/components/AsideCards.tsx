@@ -86,8 +86,8 @@ export function UnificationCard({ briefing: b, cite }: Props) {
     <Card title="Data unification">
       <dl className="kv">
         <div>
-          <dt>Resolved entity</dt>
-          <dd className="mono strong">{b.client_id}</dd>
+          <dt>Resolved to</dt>
+          <dd className="strong">{b.client_name}</dd>
         </div>
         <div>
           <dt>Aliases linked</dt>
@@ -127,17 +127,21 @@ export function UnificationCard({ briefing: b, cite }: Props) {
 }
 
 export function TraceCard({ briefing: b }: { briefing: Briefing }) {
-  const models = [...new Set(b.llm_runs.map((r) => `${r.model}${r.cached ? ' (cached)' : ''}`))]
+  const ai = b.sections.some((s) => s.author === 'ai')
+  const models = [...new Set(b.llm_runs.filter((r) => r.provider !== 'mock').map((r) => `${r.model}${r.cached ? ' (cached)' : ''}`))]
   const notes = [...new Set(b.llm_runs.flatMap((r) => r.notes))]
   const passed = b.sections.filter((s) => s.check.passed).length
   const rejected = b.sections.filter((s) => s.retry_errors.length > 0).length
+  const narrative = ai
+    ? `One call to ${models.join(', ')}.`
+    : 'Template (no AI): bullets built by code from the evidence.'
   const steps = [
     ['Check entitlements', 'Every query and search filters by your entitlements first.', false],
     ['Resolve and unify', 'Aliases, duplicates, stale and conflicting data handled by rules.', false],
     ['Compute metrics', 'Typed SQL tools; numbers formatted by code.', false],
     ['Retrieve documents', 'Hybrid search (keywords + meaning) over sources you may see.', false],
-    ['Write the narrative', `One call to ${models.join(', ') || 'no model'}.`, true],
-    ['Validate every section', 'Citations, numbers, restricted text and injected instructions checked by code.', false],
+    ['Write the narrative', narrative, ai],
+    ['Validate every section', 'Citations, numbers, dates, restricted text and injected instructions checked by code.', false],
   ] as const
   return (
     <Card title="How this briefing was built">

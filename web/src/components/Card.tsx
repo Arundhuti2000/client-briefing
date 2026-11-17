@@ -38,35 +38,61 @@ export function Chips({ ids, cite }: { ids: string[]; cite: Cite }) {
   )
 }
 
-// Who wrote the section, and what the validator said about it
+// Who wrote the section, and what the validator said about it. "AI written" only when a
+// real model wrote it; mock mode is labelled as a template.
 export function SectionBadge({ section, codeLabel }: { section?: Section; codeLabel?: string }) {
   if (!section) return null
-  const errors = [...section.check.errors, ...section.retry_errors].join('\n')
   if (section.status === 'unavailable') return <span className="tag tag-bad">Unavailable</span>
-  if (!section.check.passed) return <span className="tag tag-bad" title={errors}>Checks failed</span>
-  if (section.status === 'fallback')
-    return <span className="tag tag-warn" title={errors}>Evidence shown · draft failed checks</span>
-  if (section.written_by === 'code') return <span className="tag tag-code">{codeLabel ?? 'Computed by code · no LLM'}</span>
-  return (
-    <span className="tag tag-ai" title={`Written by ${section.written_by}; every citation and number checked by code`}>
-      AI written · checks passed
-    </span>
-  )
+  if (!section.check.passed) return <span className="tag tag-bad">Checks failed</span>
+  switch (section.author) {
+    case 'code':
+      return <span className="tag tag-code">{codeLabel ?? 'Computed by code · no LLM'}</span>
+    case 'template':
+      return <span className="tag tag-plain" title="Bullets built by code from the evidence; no AI">Template (no AI)</span>
+    case 'evidence':
+      return <span className="tag tag-warn">Source facts shown</span>
+    default:
+      return (
+        <span className="tag tag-ai" title={`Written by ${section.written_by}; every citation, number and date checked by code`}>
+          AI written · checks passed
+        </span>
+      )
+  }
 }
 
-// "Unavailable", "nothing on file", and why a first draft was rejected
+// "Unavailable", "nothing on file", and why a first draft was rejected (detail on request)
 export function SectionNotes({ section }: { section?: Section }) {
   if (!section) return null
   return (
     <>
       {section.note && <p className={`note note-${section.status}`}>{section.note}</p>}
-      {section.retry_errors.length > 0 && (
-        <p className="note note-retry">
-          The validator rejected the model's first draft ({section.retry_errors.join('; ')});{' '}
-          {section.status === 'fallback' ? 'the retry failed too.' : `the retry by ${section.written_by} passed.`}
-        </p>
+      {section.retry_note && (
+        <div className="note note-retry">
+          {section.retry_note}
+          {section.retry_errors.length > 0 && (
+            <details>
+              <summary>Details</summary>
+              <ul className="small">
+                {section.retry_errors.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
       )}
     </>
+  )
+}
+
+// A bullet's text, with "⚠ Contradicted: ..." set apart so it can't be missed
+export function BulletText({ text }: { text: string }) {
+  const [statement, contradiction] = text.split('⚠ Contradicted:')
+  return (
+    <span>
+      {statement}
+      {contradiction !== undefined && <span className="contradicted">⚠ Contradicted:{contradiction}</span>}
+    </span>
   )
 }
 
@@ -76,7 +102,7 @@ export function Bullets({ section, cite }: { section?: Section; cite: Cite }) {
     <ul className="bullets">
       {section.bullets.map((b, i) => (
         <li key={i}>
-          <span>{b.text}</span> <Chips ids={b.citations} cite={cite} />
+          <BulletText text={b.text} /> <Chips ids={b.citations} cite={cite} />
         </li>
       ))}
     </ul>

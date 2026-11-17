@@ -25,6 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app import audit, db, retrieval
 from app.unify import AS_OF_DATE, Resolver
+from app.wording import metric_label
 
 # ---------------------------------------------------------------------------
 # Contracts
@@ -182,7 +183,7 @@ def get_metrics(conn, user, req: MetricsRequest) -> list[Fact]:
     client_id = require_client(conn, req.client_id)
     series = {}
     for row in db.metric_rows(conn, client_id):  # oldest first
-        series.setdefault(row["series"], []).append(row)
+        series.setdefault(metric_label(row["source"], row["product"], row["metric"]), []).append(row)
     facts = []
     for name, rows in series.items():
         latest = rows[-1]
@@ -258,7 +259,8 @@ def get_data_quality_flags(conn, user, req: ClientRequest) -> list[Fact]:
     client_id = require_client(conn, req.client_id)
     return [Fact(evidence_id=f"FLAG:{f['flag_id']}", label=f["flag_type"], value=f["detail"], as_of=AS_OF_DATE,
                  source="data_quality_flags",
-                 details={"severity": f["severity"], "source_ids": json.loads(f["source_ids"])})
+                 details={"title": f["title"], "severity": f["severity"], "source_ids": json.loads(f["source_ids"]),
+                          "action": f["action"], "caveat": f["caveat"]})
             for f in db.flags(conn, client_id, user.entitlements)]
 
 @tool(SourceRequest)
@@ -279,7 +281,7 @@ def get_source(conn, user, req: SourceRequest) -> list[Fact]:
         flag = db.visible_flag(conn, key, user.entitlements)
         if flag is None:
             raise ToolError("not_found")
-        return [Fact(evidence_id=req.evidence_id, label=flag["flag_type"], value=flag["detail"], as_of=AS_OF_DATE,
+        return [Fact(evidence_id=req.evidence_id, label=flag["title"], value=flag["detail"], as_of=AS_OF_DATE,
                      source="data_quality_flags",
                      details={"severity": flag["severity"], "client_id": flag["client_id"],
                               "source_ids": json.loads(flag["source_ids"])})]

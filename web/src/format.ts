@@ -7,10 +7,13 @@ export function chipLabel(evidenceId: string): string {
   return rest.join(':')
 }
 
-// "2026-09-15" -> "15 Sep 2026"
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// "2026-09-15" -> "15 Sep 2026" (the same format the Python side uses; browsers vary, e.g. "Sept")
 export function shortDate(iso: string | null): string {
   if (!iso) return 'none on file'
-  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number)
+  return `${day} ${MONTHS[month - 1]} ${year}`
 }
 
 export function errorMessage(error: unknown): string {

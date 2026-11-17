@@ -26,10 +26,10 @@ from rapidfuzz import fuzz, process
 
 from app import load_structured, retrieval
 from app.ingest import Document, load_documents
+from app.wording import (AS_OF_DATE, DOC_NAMES, article, capitalize, day_month, days_before, doc_phrase,  # noqa: F401
+                         format_usd, join_words, metric_label, month_of, period_text, plain_words, first_lower)
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
-
-AS_OF_DATE = dt.date(2026, 11, 18)  # demo "today" = the meeting date; in production, the run date
 
 RESOLVE_SCORE = 90       # fuzzy score that resolves a name (SPEC section 4)
 REVIEW_SCORE = 75        # 75-89 goes to the review queue instead
@@ -68,10 +68,13 @@ CREATE TABLE data_quality_flags (
     flag_id               TEXT PRIMARY KEY,
     client_id             TEXT,
     flag_type             TEXT,
-    detail                TEXT,    -- plain language, numbers formatted by code
+    title                 TEXT,    -- short, for people, e.g. "Who is the CFO?"
+    detail                TEXT,    -- one plain sentence or two; numbers and dates formatted by code
     source_ids            TEXT,    -- JSON list of evidence IDs
     severity              TEXT,    -- low, medium, high
-    required_entitlement  TEXT     -- strictest entitlement of the flag's sources
+    required_entitlement  TEXT,    -- strictest entitlement of the flag's sources
+    action                TEXT,    -- conflicts: what to clarify at the meeting (a talking point)
+    caveat                TEXT     -- conflicts: why the document statement is contradicted
 );
 CREATE TABLE chunks (
     chunk_id              TEXT PRIMARY KEY,
@@ -98,31 +101,19 @@ def normalize(name: str) -> str:
     return " ".join(words)
 
 
-def format_usd(amount: float) -> str:
-    """4200000 -> '$4.2M', 50000000 -> '$50M', 1450000000 -> '$1.45B' (up to two decimals)"""
-    for size, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
-        if abs(amount) >= size:
-            return f"${amount / size:.2f}".rstrip("0").rstrip(".") + suffix
-    return f"${amount:,.0f}"
-
-
 def strictest(*entitlements: str) -> str:
     """A flag built from a restricted source is itself restricted."""
     return next((e for e in entitlements if e != "standard"), "standard")
 
 
-DOC_TYPE_NAMES = {"email": "email", "meeting_note": "meeting note", "prior_briefing": "prior briefing",
-                  "research": "research note", "news": "news item"}
-
-
-def doc_label(doc: Document) -> str:
-    return f"{DOC_TYPE_NAMES[doc.doc_type]} {doc.doc_id}"  # e.g. "prior briefing brief_001"
-
-
-def add_flag(conn, client_id, flag_type, severity, detail, source_ids, entitlement="standard") -> None:
+def add_flag(conn, client_id, flag_type, severity, title, detail, source_ids, entitlement="standard",
+             action=None, caveat=None) -> None:
+    """Record one finding. Its title and detail are written for people: no IDs, human dates.
+    The IDs a reader may want are in source_ids, shown as citation chips."""
     count = conn.execute("SELECT COUNT(*) FROM data_quality_flags").fetchone()[0]
-    conn.execute("INSERT INTO data_quality_flags VALUES (?, ?, ?, ?, ?, ?, ?)",
-                 (f"F{count + 1:03d}", client_id, flag_type, detail, json.dumps(source_ids), severity, entitlement))
+    conn.execute("INSERT INTO data_quality_flags VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                 (f"F{count + 1:03d}", client_id, flag_type, title, detail, json.dumps(source_ids), severity,
+                  entitlement, action, caveat))
 
 # ---------------------------------------------------------------------------
 # Step 1: duplicate clients (T2)
@@ -150,9 +141,10 @@ def merge_duplicate_clients(conn) -> None:
                      (client["legal_name"], survivor_id, f"merged from {merged_id}"))
         conn.execute("DELETE FROM clients WHERE client_id = ?", (merged_id,))
         conn.execute("INSERT INTO client_merges VALUES (?, ?, ?)", (survivor_id, merged_id, reason))
-        add_flag(conn, survivor_id, "duplicate_client", "low",
-                 f"Duplicate client record {merged_id} '{client['legal_name']}' ({reason}, updated "
-                 f"{client['updated_at']}) was merged into {survivor_id}; {moved} related records moved with it.",
+        why = "shared this client's web domain" if reason == "same domain" else "had a nearly identical name"
+        add_flag(conn, survivor_id, "duplicate_client", "low", "Duplicate client record merged",
+                 f"An older record for “{client['legal_name']}” (last updated in {month_of(client['updated_at'])}) "
+                 f"{why} and was merged into this client, with {moved} related record{'' if moved == 1 else 's'}.",
                  [f"SQL:clients:{merged_id}", f"SQL:clients:{survivor_id}"])
 
 # ---------------------------------------------------------------------------
@@ -220,9 +212,9 @@ def record_unresolved(conn, source_id, ref_text, r: Resolution, what: str, entit
     reason = {"review": "needs a human review before it can be matched",
               "unresolved": "couldn't be matched to a client confidently",
               "ambiguous": "matches more than one client"}[r.method]
-    named = f"mentions '{ref_text}'" if ref_text else "names no known client"
-    add_flag(conn, r.best_match, "unresolved_reference", "medium",
-             f"{what[:1].upper()}{what[1:]} {named} but {reason}; it is not attached to any client.",
+    named = f"mentions “{ref_text}”" if ref_text else "names no known client"
+    add_flag(conn, r.best_match, "unresolved_reference", "medium", "Unmatched reference",
+             f"{capitalize(article(what))} {what} {named} but {reason}, so it was not attached to any client.",
              [source_id], entitlement)
 
 
@@ -237,7 +229,7 @@ def resolve_documents(conn, resolver: Resolver, docs: list[Document]) -> dict[st
                          (doc.doc_id, r.client_id, r.method, r.score))
         else:
             record_unresolved(conn, f"DOC:{doc.doc_id}", doc.client_ref, r,
-                              doc_label(doc), doc.required_entitlement)
+                              DOC_NAMES[doc.doc_type], doc.required_entitlement)
     return doc_clients
 
 
@@ -251,7 +243,7 @@ def resolve_pipeline(conn, resolver: Resolver) -> None:
             conn.execute("UPDATE opportunities SET client_id = ? WHERE opp_id = ?", (r.client_id, opp_id))
         else:
             record_unresolved(conn, f"SQL:opportunities:{opp_id}", client_name, r,
-                              f"pipeline opportunity {opp_id}", entitlement)
+                              "pipeline opportunity", entitlement)
 
 # ---------------------------------------------------------------------------
 # Step 3: duplicate contacts (T3)
@@ -270,24 +262,25 @@ def dedupe_contacts(conn) -> None:
                 kept[k] = c
             continue
         conn.execute("DELETE FROM contacts WHERE contact_id = ?", (c["contact_id"],))
-        why = ("same email apart from letter case" if original["email"].lower() == c["email"].lower()
-               else "same name and title")
-        add_flag(conn, c["client_id"], "duplicate_contact", "low",
-                 f"{c['name']} appears twice ({original['contact_id']} and {c['contact_id']}, {why}). "
-                 f"Kept {original['contact_id']}, the newer record (updated {original['updated_at']}).",
+        why = ("the email addresses differed only in capital letters"
+               if original["email"].lower() == c["email"].lower() else "both had the same name and title")
+        add_flag(conn, c["client_id"], "duplicate_contact", "low", "Duplicate contact removed",
+                 f"{c['name']} was listed twice ({why}). Kept the newer record, updated on "
+                 f"{day_month(original['updated_at'])}.",
                  [f"SQL:contacts:{original['contact_id']}", f"SQL:contacts:{c['contact_id']}"])
 
 # ---------------------------------------------------------------------------
 # Step 4: staleness (T4, T12)
 # ---------------------------------------------------------------------------
 
-# Each metric series as (client_id, series label, evidence ID, as_of).
+# Each metric series as (client_id, source table, product, metric, evidence ID, as_of).
+# The label people see comes from wording.metric_label, the same rule the tools use.
 SERIES_QUERIES = [
-    "SELECT client_id, 'Revenue', 'SQL:revenue_metrics:' || client_id || ':' || period, as_of "
-    "FROM revenue_metrics",
-    "SELECT client_id, product || ' balance', 'SQL:holdings:' || client_id || ':' || product || ':' || as_of, "
-    "as_of FROM holdings",
-    "SELECT client_id, product || ' ' || replace(replace(replace(metric, '_usd', ''), '_pct', ''), '_', ' '), "
+    "SELECT client_id, 'revenue_metrics', NULL, 'revenue_usd', "
+    "'SQL:revenue_metrics:' || client_id || ':' || period, as_of FROM revenue_metrics",
+    "SELECT client_id, 'holdings', product, NULL, "
+    "'SQL:holdings:' || client_id || ':' || product || ':' || as_of, as_of FROM holdings",
+    "SELECT client_id, 'performance', product, metric, "
     "'SQL:performance:' || client_id || ':' || product || ':' || metric || ':' || period, as_of FROM performance",
 ]
 
@@ -303,7 +296,8 @@ def flag_stale_metrics(conn, today: dt.date) -> None:
     """One low-severity flag per client listing series whose older values are superseded."""
     series = {}  # (client_id, label) -> [(as_of, evidence_id)]
     for query in SERIES_QUERIES:
-        for client_id, label, evidence_id, as_of in conn.execute(query):
+        for client_id, source, product, metric, evidence_id, as_of in conn.execute(query):
+            label = metric_label(source, product, metric)
             series.setdefault((client_id, label), []).append((as_of, evidence_id))
     per_client = {}  # client_id -> (labels, evidence_ids)
     for (client_id, label), rows in sorted(series.items()):
@@ -313,9 +307,9 @@ def flag_stale_metrics(conn, today: dt.date) -> None:
             labels.append(label)
             ids.extend(evidence_id for as_of, evidence_id in sorted(rows) if as_of in old)
     for client_id, (labels, ids) in per_client.items():
-        add_flag(conn, client_id, "stale", "low",
-                 f"Older values of {', '.join(labels)} are more than {STALE_AFTER_DAYS} days old and "
-                 f"superseded by newer ones; only the latest values are used.", ids)
+        add_flag(conn, client_id, "stale", "low", "Older values superseded",
+                 f"Older values of {join_words([first_lower(label) for label in labels])} are more than "
+                 f"{STALE_AFTER_DAYS} days old and were replaced by newer ones; only the latest values are used.", ids)
 
 
 def flag_stale_statements(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
@@ -329,10 +323,11 @@ def flag_stale_statements(conn, docs: list[Document], doc_clients: dict[str, str
                                   "WHERE client_id = ? ORDER BY as_of DESC LIMIT 1", (client_id,)).fetchone()
             if latest is None or latest["revenue_usd"] == claim["value"]:
                 continue
-            add_flag(conn, client_id, "stale_statement", "medium",
-                     f"Revenue: {doc_label(doc)} ({doc.date}) said {format_usd(claim['value'])}; latest records "
-                     f"say {format_usd(latest['revenue_usd'])} ({latest['period']}, as of {latest['as_of']}). "
-                     f"Using {format_usd(latest['revenue_usd'])}.",
+            now = format_usd(latest["revenue_usd"])
+            add_flag(conn, client_id, "stale_statement", "medium", "Revenue figure is out of date",
+                     f"{capitalize(doc_phrase(doc.doc_type, doc.date))} said revenue was {format_usd(claim['value'])}, "
+                     f"but the latest records say {now} ({period_text(latest['period'])}, as of "
+                     f"{day_month(latest['as_of'])}). Using {now}.",
                      [f"DOC:{doc.doc_id}", f"SQL:revenue_metrics:{client_id}:{latest['period']}"],
                      doc.required_entitlement)
 
@@ -342,10 +337,9 @@ def flag_overdue_actions(conn, today: dt.date) -> None:
     rows = conn.execute("SELECT * FROM open_actions WHERE status = 'Open' AND due_date < ? "
                         "ORDER BY due_date, action_id", (today.isoformat(),)).fetchall()
     for a in rows:
-        days = (today - dt.date.fromisoformat(a["due_date"])).days
-        add_flag(conn, a["client_id"], "overdue", "medium",
-                 f"Overdue action: '{a['description']}' (owner {a['owner']}) was due {a['due_date']} "
-                 f"and is {days} days late.",
+        add_flag(conn, a["client_id"], "overdue", "medium", "Overdue action",
+                 f"“{a['description']}” (owner {a['owner']}) was due on {day_month(a['due_date'])}, "
+                 f"{days_before(a['due_date'], today)} days ago.",
                  [f"SQL:open_actions:{a['action_id']}"])
 
 # ---------------------------------------------------------------------------
@@ -364,13 +358,19 @@ def flag_role_conflicts(conn, docs: list[Document], doc_clients: dict[str, str])
                                    "ORDER BY updated_at DESC LIMIT 1", (client_id, claim["role"])).fetchone()
             if contact is None or contact["name"].lower() == claim["name"].lower():
                 continue  # nobody holds the role on file, or the document agrees
-            doc_date = doc.date.isoformat()
-            newer = contact["name"] if contact["updated_at"] >= doc_date else claim["name"]
-            add_flag(conn, client_id, "conflict", "high",
-                     f"{claim['role']}: {doc_label(doc)} ({doc_date}) names {claim['name']}; the contacts record "
-                     f"(updated {contact['updated_at']}) says {contact['name']}. Using {newer}, the newer source.",
+            role, said_by = claim["role"], doc_phrase(doc.doc_type, doc.date)  # e.g. "a June email"
+            updated = month_of(contact["updated_at"])
+            record_is_newer = contact["updated_at"] >= doc.date.isoformat()
+            using = (f"Using {contact['name']}, the newer record." if record_is_newer
+                     else f"Using {claim['name']}, the newer source.")
+            add_flag(conn, client_id, "conflict", "high", f"Who is the {role}?",
+                     f"{capitalize(said_by)} names {claim['name']}, but the contacts record (updated in {updated}) "
+                     f"says {contact['name']}. {using} Confirm at the meeting.",
                      [f"DOC:{doc.doc_id}", f"SQL:contacts:{contact['contact_id']}"],
-                     doc.required_entitlement)
+                     doc.required_entitlement,
+                     action=f"Confirm who the {role} is (records say {contact['name']}; {said_by} says {claim['name']}).",
+                     caveat=(f"the contacts record (updated in {updated}) says the {role} is {contact['name']}."
+                             if record_is_newer else None))
 
 
 def flag_commitment_conflicts(conn, docs: list[Document], doc_clients: dict[str, str]) -> None:
@@ -384,12 +384,17 @@ def flag_commitment_conflicts(conn, docs: list[Document], doc_clients: dict[str,
                                (client_id, claim["product"])).fetchone()
             if opp is None or opp["stage"] not in LOST_STAGES:
                 continue
-            add_flag(conn, client_id, "conflict", "high",
-                     f"{claim['product']}: {doc_label(doc)} ({doc.date}) says the client committed to "
-                     f"{format_usd(claim['amount_usd'])} by {claim['due']}; the pipeline shows {opp['opp_id']} as "
-                     f"{opp['stage']} (updated {opp['updated_at']}). Not presented as a live opportunity.",
+            product, amount = plain_words(claim["product"]), format_usd(claim["amount_usd"])
+            marked = f"marked {opp['stage']} in {month_of(opp['updated_at'])}"
+            add_flag(conn, client_id, "conflict", "high", f"Is the {product} deal still live?",
+                     f"{capitalize(doc_phrase(doc.doc_type, doc.date))} says the client committed to {amount} of "
+                     f"{product} by {day_month(claim['due'])}, but the opportunity was {marked}. "
+                     f"It is not shown as a live opportunity.",
                      [f"DOC:{doc.doc_id}", f"SQL:opportunities:{opp['opp_id']}"],
-                     strictest(doc.required_entitlement, opp["required_entitlement"]))
+                     strictest(doc.required_entitlement, opp["required_entitlement"]),
+                     action=f"Ask about the {amount} {product} commitment, since the opportunity was "
+                            f"marked {opp['stage']}.",
+                     caveat=f"the opportunity was {marked}.")
 
 # ---------------------------------------------------------------------------
 # Step 6: approved sources (T11) and chunks
@@ -414,9 +419,9 @@ def index_chunks(conn, docs: list[Document], doc_clients: dict[str, str]) -> Non
             continue  # unresolved: never attached, never searchable
         if doc.doc_type == "news" and doc.source not in approved:
             # The flag names the source only; it never repeats the unapproved story.
-            add_flag(conn, client_id, "excluded_source", "medium",
-                     f"A news item ({doc.doc_id}) from '{doc.source}', which is not an approved news source, "
-                     f"was excluded from the briefing.", [f"DOC:{doc.doc_id}"])
+            add_flag(conn, client_id, "excluded_source", "medium", "Unapproved news source",
+                     f"A news item from {doc.source}, which is not an approved news source, was left out of "
+                     f"the briefing.", [f"DOC:{doc.doc_id}"])
             continue
         for i, text in enumerate(split_into_chunks(doc.text)):
             conn.execute("INSERT INTO chunks VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -477,11 +482,11 @@ def print_summary(data_dir: Path = DATA_DIR) -> None:
               f"(embedded to {data_dir / 'embeddings.npy'}), opportunities without a client {unresolved_opps}")
 
         print(f"\nData quality flags ({counts['data_quality_flags']}):")
-        rows = conn.execute("SELECT flag_id, client_id, severity, flag_type, required_entitlement, detail "
+        rows = conn.execute("SELECT flag_id, client_id, severity, title, required_entitlement, detail "
                             "FROM data_quality_flags ORDER BY flag_id")
-        for flag_id, client_id, severity, flag_type, entitlement, detail in rows:
+        for flag_id, client_id, severity, title, entitlement, detail in rows:
             lock = "" if entitlement == "standard" else f" [{entitlement}]"
-            print(f"  {flag_id} {client_id or '-':<5} {severity:<7}{flag_type:<21}{detail}{lock}")
+            print(f"  {flag_id} {client_id or '-':<5} {severity:<7}{title}: {detail}{lock}")
     finally:
         conn.close()
 

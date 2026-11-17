@@ -136,7 +136,10 @@ def test_t4_stale_statement_shows_both_values(db):
 
 def test_t5_cfo_conflict_prefers_newer_record(db):
     [flag] = [f for f in flags(db, "conflict", "C001") if "DOC:email_001" in f["source_ids"]]
-    assert "Dana Lee" in flag["detail"] and "Using Raj Patel" in flag["detail"]
+    assert flag["title"] == "Who is the CFO?"
+    assert flag["detail"] == ("A June email names Dana Lee, but the contacts record (updated in August) says "
+                              "Raj Patel. Using Raj Patel, the newer record. Confirm at the meeting.")
+    assert flag["action"] == "Confirm who the CFO is (records say Raj Patel; a June email says Dana Lee)."
     assert flag["severity"] == "high"
 
 
@@ -158,7 +161,7 @@ def test_t8_ambiguous_arbor_news_not_attached(db):
     assert db.execute("SELECT 1 FROM chunks WHERE doc_id = 'news_005'").fetchone() is None
     [flag] = flags(db, "unresolved_reference")
     assert flag["client_id"] == "C003" and "not attached" in flag["detail"]
-    assert flag["detail"].startswith("News item news_005 mentions 'Arbor'")
+    assert flag["detail"].startswith("A news item mentions “Arbor”")
 
 
 def test_t9_restricted_records_keep_their_entitlement(db):
@@ -175,7 +178,7 @@ def test_t11_unapproved_news_excluded_and_flagged(db):
 
 def test_t12_overdue_action_flagged(db):
     [flag] = flags(db, "overdue")
-    assert flag["source_ids"] == ["SQL:open_actions:A-001"] and "18 days late" in flag["detail"]
+    assert flag["source_ids"] == ["SQL:open_actions:A-001"] and "due on 31 Oct, 18 days ago" in flag["detail"]
 
 
 def test_every_pipeline_row_gets_a_client(db):

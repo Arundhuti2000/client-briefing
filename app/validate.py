@@ -4,16 +4,20 @@ The LLM is the least trusted component, so code checks every section before a
 person sees it:
   1. The output parses into the Draft schema.
   2. Every bullet cites at least one evidence ID, and every ID is in that section's evidence.
-  3. Every number in a bullet appears in the evidence that bullet cites.
+  3. Every amount, percentage, count and date in a bullet appears in the evidence it cites.
+     Dates are matched as dates ("31 Oct", "August 15", "2026-10-31" are the same day),
+     so the day and year inside a date are never checked as amounts.
   4. Nothing restricted that this user may not see appears (record IDs or text).
   5. No instruction-like text from the documents (prompt injection) is repeated as a claim.
+  6. No internal record IDs in the text: they belong in the citations, not in the prose.
 
-Numbers are compared by value, so "$5.1M" and "$5,100,000" match, but "$6M" never
-matches evidence that says $5.1M.
+Each failure has a technical detail (for the audit log and the "Details" box) and a
+plain reason for the reader ("a date wasn't in its source").
 """
 
 import datetime as dt
 import re
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
@@ -26,10 +30,13 @@ from pydantic import BaseModel, Field, ValidationError
 class Evidence(BaseModel):
     evidence_id: str                                   # e.g. SQL:revenue_metrics:C001:2026Q3, DOC:note_001
     kind: Literal["fact", "document", "flag"]
-    label: str
-    text: str                                          # what the LLM sees; numbers already formatted by code
+    label: str                                         # for people, e.g. "Meeting note, 15 Sep 2026"
+    text: str                                          # what the LLM sees; plain sentences, numbers formatted by code
     as_of: dt.date
     source: str | None = None                          # e.g. Reuters, crm_notes, revenue_metrics (for the UI)
+    suggestion: str | None = None                      # how this could be a talking point (template mode)
+    caveat: str | None = None                          # why a flag says this document is contradicted
+    caveat_id: str | None = None                       # that flag's evidence ID
 
 
 class SectionEvidence(BaseModel):
@@ -58,7 +65,8 @@ class Draft(BaseModel):
 
 class Check(BaseModel):
     passed: bool
-    errors: list[str] = []
+    errors: list[str] = []    # technical detail, e.g. "bullet 4 has dates not in its cited evidence: ['31 Nov']"
+    reasons: list[str] = []   # plain reasons for the reader, e.g. "a date wasn't in its source"
 
 
 class Hidden(BaseModel):
@@ -67,12 +75,18 @@ class Hidden(BaseModel):
     texts: list[str] = []
 
 # ---------------------------------------------------------------------------
-# Helpers: numbers, injections, overlapping text
+# Finding dates, years and numbers in text
 # ---------------------------------------------------------------------------
 
-DATE_RE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
-# A number not glued to a word: "$5.1M", "13.6%", "4,200,000", "15". Skips "2026Q3", "C001", "note_001".
-NUMBER_RE = re.compile(r"(?<![\w.])\$?(\d+(?:,\d{3})*(?:\.\d+)?)(%|[KMB](?![A-Za-z]))?(?![\w])")
+MONTH = (r"(Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|"
+         r"Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)")
+ISO_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+DAY_MONTH = re.compile(rf"\b(\d{{1,2}}) {MONTH}\b(?:,? (\d{{4}})\b)?")                 # 15 Sep 2026, 15 Sep
+MONTH_DAY = re.compile(rf"\b{MONTH}\.? (\d{{1,2}})(?:st|nd|rd|th)?\b(?:,? (\d{{4}})\b)?")  # August 15, Oct 31, 2026
+PERIOD = re.compile(r"\b(\d{4})Q[1-4]\b|\bQ[1-4] (\d{4})\b")                           # 2026Q3, Q3 2026
+YEAR = re.compile(r"(?<![\w.,$])((?:19|20)\d{2})(?!\w|%|[.,]\d)")                     # a year on its own
+# An amount, percentage or count not glued to a word: "$5.1M", "13.6%", "4,200,000", "18"
+NUMBER = re.compile(r"(?<![\w.])\$?(\d+(?:,\d{3})*(?:\.\d+)?)(%|[KMB](?![A-Za-z]))?(?![\w])")
 MULTIPLIERS = {"K": 1e3, "M": 1e6, "B": 1e9}
 
 INJECTION_RE = re.compile(r"ignore (all |any )?(previous|prior|above|earlier) instructions|"
@@ -80,16 +94,44 @@ INJECTION_RE = re.compile(r"ignore (all |any )?(previous|prior|above|earlier) in
                           r"forget (all |any )?(previous|prior|earlier) instructions|"
                           r"you are now|system prompt", re.IGNORECASE)
 
+# Internal IDs that belong in citations, never in prose
+INTERNAL_ID = re.compile(r"\b(?:note|email|brief|news|research)_\d+\b|\bOPP-[A-Z]+-[A-Z]+\b|\bA-\d{3}\b|"
+                         r"\bSI-\d{3}\b|\bCT\d{3}\b|\bC\d{3}\b|\bF\d{3}\b|\b(?:SQL|DOC|FLAG):\S+|\bu\d\b")
 
-def numbers_in(text: str) -> set[str]:
-    """Canonical values of every date and number in the text: '$5.1M' -> 'num:5100000.0'."""
-    found = {f"date:{d}" for d in DATE_RE.findall(text)}
-    for digits, suffix in NUMBER_RE.findall(DATE_RE.sub(" ", text)):
-        value = float(digits.replace(",", ""))
-        if suffix == "%":
-            found.add(f"pct:{round(value, 2)}")
-        else:
-            found.add(f"num:{round(value * MULTIPLIERS.get(suffix, 1), 2)}")
+
+def month_number(name: str) -> int:
+    return ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"].index(name[:3].lower()) + 1
+
+
+@dataclass
+class Found:
+    dates: dict = field(default_factory=dict)    # (year or None, month, day) -> as written
+    years: dict = field(default_factory=dict)    # year -> as written
+    numbers: dict = field(default_factory=dict)  # canonical value, e.g. 'num:5100000.0' -> as written
+
+
+def find_facts(text: str) -> Found:
+    """Dates, years and numbers in the text. Each match is removed before the next pattern,
+    so '31 Oct 2026' is one date, not the numbers 31 and 2026."""
+    found = Found()
+
+    def take(pattern, handle):
+        nonlocal text
+        for match in pattern.finditer(text):
+            handle(match)
+        text = pattern.sub(" ", text)
+
+    take(ISO_DATE, lambda m: found.dates.setdefault((int(m[1]), int(m[2]), int(m[3])), m[0]))
+    take(DAY_MONTH, lambda m: found.dates.setdefault(
+        (int(m[3]) if m[3] else None, month_number(m[2]), int(m[1])), m[0]))
+    take(MONTH_DAY, lambda m: found.dates.setdefault(
+        (int(m[3]) if m[3] else None, month_number(m[1]), int(m[2])), m[0]))
+    take(PERIOD, lambda m: found.years.setdefault(int(m[1] or m[2]), m[0]))
+    take(YEAR, lambda m: found.years.setdefault(int(m[1]), m[0]))
+    for m in NUMBER.finditer(text):
+        value = float(m[1].replace(",", ""))
+        key = f"pct:{round(value, 2)}" if m[2] == "%" else f"num:{round(value * MULTIPLIERS.get(m[2], 1), 2)}"
+        found.numbers.setdefault(key, m[0])
     return found
 
 
@@ -125,30 +167,59 @@ def parse_draft(raw: dict | None) -> tuple[dict[str, SectionDraft], list[str]]:
 def check_section(draft: SectionDraft | None, section: SectionEvidence, hidden: Hidden,
                   schema_errors: list[str] = ()) -> Check:
     if draft is None:
-        return Check(passed=False, errors=list(schema_errors) or [f"section '{section.section}' is missing"])
+        errors = list(schema_errors) or [f"section '{section.section}' is missing"]
+        reason = "the answer wasn't in the expected format" if schema_errors else "a section was missing"
+        return Check(passed=False, errors=errors, reasons=[reason])
     evidence = {e.evidence_id: e for e in section.evidence}
     injections = [s for e in section.evidence for s in find_injections(e.text)]
     hidden_ngrams = set().union(*(word_ngrams(t) for t in hidden.texts)) if hidden.texts else set()
-    errors = []
+    errors, reasons = [], []
+
+    def fail(error: str, reason: str):
+        errors.append(error)
+        if reason not in reasons:
+            reasons.append(reason)
+
     for i, bullet in enumerate(draft.bullets, start=1):
         where = f"bullet {i}"
         # Rule 2: citations exist and come from this section's evidence
         if not bullet.citations:
-            errors.append(f"{where} has no citation")
+            fail(f"{where} has no citation", "a statement had no source")
         unknown = [c for c in bullet.citations if c not in evidence]
         if unknown:
-            errors.append(f"{where} cites IDs that are not in this section's evidence: {unknown}")
-        # Rule 3: every number is in the cited evidence
+            fail(f"{where} cites IDs that are not in this section's evidence: {unknown}",
+                 "a statement cited a source it wasn't given")
+        # Rule 3: amounts, counts and dates must be in the cited evidence
         cited = [evidence[c] for c in bullet.citations if c in evidence]
-        allowed = set().union(*(numbers_in(e.text) | {f"date:{e.as_of}"} for e in cited)) if cited else set()
-        invented = sorted(numbers_in(bullet.text) - allowed)
-        if invented:
-            errors.append(f"{where} has numbers or dates not in its cited evidence: {invented}")
+        allowed = Found()
+        for e in cited:
+            facts = find_facts(e.text)
+            allowed.dates |= facts.dates | {(e.as_of.year, e.as_of.month, e.as_of.day): ""}
+            allowed.years |= facts.years | {e.as_of.year: ""}
+            allowed.numbers |= facts.numbers
+        allowed.years |= {year: "" for year, _, _ in allowed.dates if year}
+        said = find_facts(bullet.text)
+        bad_dates = [written for (year, month, day), written in said.dates.items()
+                     if not any(m == month and d == day and (year is None or y in (None, year))
+                                for y, m, d in allowed.dates)]
+        bad_years = [written for year, written in said.years.items() if year not in allowed.years]
+        bad_numbers = [written for key, written in said.numbers.items() if key not in allowed.numbers]
+        if bad_dates or bad_years:
+            fail(f"{where} has dates not in its cited evidence: {bad_dates + bad_years}",
+                 "a date wasn't in its source")
+        if bad_numbers:
+            fail(f"{where} has numbers not in its cited evidence: {bad_numbers}",
+                 "a number wasn't in its source")
         # Rule 4: nothing restricted the user may not see
         leaked_ids = [r for r in hidden.record_ids if r in bullet.text or r in bullet.citations]
         if leaked_ids or word_ngrams(bullet.text) & hidden_ngrams:
-            errors.append(f"{where} contains restricted content")
+            fail(f"{where} contains restricted content", "it contained restricted content")
         # Rule 5: injected instructions are data, never claims
         if any(word_ngrams(bullet.text) & word_ngrams(s) for s in injections):
-            errors.append(f"{where} repeats instruction-like text from a document")
-    return Check(passed=not errors, errors=errors)
+            fail(f"{where} repeats instruction-like text from a document",
+                 "it repeated an instruction found in a document")
+        # Rule 6: IDs go in citations, never in the prose
+        ids_in_text = INTERNAL_ID.findall(bullet.text)
+        if ids_in_text:
+            fail(f"{where} shows internal IDs in its text: {ids_in_text}", "it showed internal record codes")
+    return Check(passed=not errors, errors=errors, reasons=reasons)
