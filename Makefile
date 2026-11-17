@@ -2,7 +2,7 @@
 # or point at it directly:  make test PYTHON=.venv/Scripts/python
 PYTHON ?= python
 
-.PHONY: data dev2 holdout load unify briefing api web test eval eval-real eval-break llm-check mcp
+.PHONY: data dev2 holdout load unify briefing api web test eval eval-real eval-break results llm-check mcp
 
 # Which briefing `make briefing` prints: CLIENT is an ID, name or alias; USER_ID is u1 or u2.
 # (Not "AS" or "USER": make predefines AS as the assembler, and USER is a shell variable.)
@@ -61,6 +61,10 @@ eval-break:
 # The same, then again with the LLM in .env (cached answers cost no requests)
 eval-real:
 	$(PYTHON) -m eval.run_eval --real
+
+# Write the README's results section from the saved eval reports (no number typed by hand)
+results:
+	$(PYTHON) -m eval.report_md
 
 # Ping each LLM provider (one tiny request each) and print which work
 llm-check:
