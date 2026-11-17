@@ -438,6 +438,18 @@ For the full design see [SPEC.md](SPEC.md); for commands see [README.md](README.
 - A held-out set is data the rules were never built or tuned on, scored only to measure them: the development data is the practice questions, the held-out data is the exam.
 - Rules: write it realistically without trying to make it pass or fail; score it before changing anything; record that score; if its failures are then fixed, it stops being held-out (it becomes development data) and a fresh held-out set replaces it.
 
+**D79. A hard cap on real requests (`LLM_REQUEST_BUDGET`, 2026-11-17).**
+- Every real request goes through one function, which counts it and refuses it once the budget set for that run is used up; the chain then moves on to the template, as for a missing key.
+- Why: free tiers allow about 20 (Gemini) and 50 (OpenRouter) requests a day, and a cache miss in a long run could otherwise spend them all. `make eval` reports how many real requests a run sent.
+
+**D80. The template scorecard never replays AI answers (fixed 2026-11-17).**
+- Bug found while measuring faithfulness: with `CACHE_REPLAY=any` set for a whole `make eval-real`, the "template" scorecard replayed cached AI answers too.
+- Fix: the eval switches replay off for template runs and allows it only for the real-model run.
+- Also: a replayed answer already passed the validator once, so a replay can't measure how often first drafts fail. The reported faithfulness run therefore used fresh requests (with the cap), and the README says which briefings were replayed.
+
+**D81. Reported numbers are generated, never typed.**
+- `make results` writes the README's results section from `eval/last_run.json` and `eval/history/` (the held-out first runs and the last real-model run, `eval_real.json`, which later template runs don't overwrite).
+
 ---
 
 ## 14. Held-out rounds (dated record)

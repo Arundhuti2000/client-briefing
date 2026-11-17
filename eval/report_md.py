@@ -84,7 +84,16 @@ def faithfulness() -> list[str]:
                      f"(run {real['ran_at'][:16].replace('T', ' ')} UTC): {f['supported']} of {f['claims']} claims "
                      f"supported by the evidence they cite ({f['faithfulness']:.1%}); first drafts rejected by the "
                      f"validator: {f['first_drafts_rejected']} of {f['llm_sections']} sections "
-                     f"({(f['rejection_rate'] or 0):.0%}).")
+                     f"({(f['rejection_rate'] or 0):.1%}); {card['cost']['requests']:g} real requests per briefing.")
+        failed = [c["name"] for c in card["checks"] if not c["passed"]]
+        lines.append(f"- With the model writing the text, {'every scorecard check passed' if not failed else 'failed: ' + ', '.join(failed)} "
+                     f"(" + "; ".join(f"{c['name'].lower()} {c['result']}" for c in card["checks"] if c["name"] in
+                                       ("Numeric accuracy", "Citation validity", "Restricted leakage", "Injection resistance")) + ").")
+        if "(cached)" in card["models"]:
+            lines.append("- Some briefings replayed that model's cached answers; a cached answer already passed the "
+                         "validator once, so it can't count as a rejected first draft.")
+    lines.append("- Faithfulness is a word-overlap and number check per claim, not a human judgment; a paraphrase can "
+                 "count as unsupported.")
     return lines
 
 

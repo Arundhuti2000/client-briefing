@@ -309,6 +309,22 @@ def describe_error(error: Exception) -> str:
     return f"{reason}: {message}" if message else reason
 
 
+REQUESTS_SENT = [0]  # real requests sent by this process, for LLM_REQUEST_BUDGET and reports
+
+
+class BudgetSpent(Exception):
+    """LLM_REQUEST_BUDGET is used up: the chain moves on, as for a missing key, to the template."""
+
+
+def spend_request() -> None:
+    """Count one real request, or refuse it when LLM_REQUEST_BUDGET (if set) is used up. A hard cap
+    for runs that must not spend more than a few requests of a free tier's daily allowance."""
+    budget = os.getenv("LLM_REQUEST_BUDGET")
+    if budget is not None and REQUESTS_SENT[0] >= int(budget):
+        raise BudgetSpent(f"LLM_REQUEST_BUDGET={budget} used up")
+    REQUESTS_SENT[0] += 1
+
+
 def call_with_retry(provider: str, models: list[str], prompt: str, count: list[int] | None = None, **options) -> Reply:
     """One request, respecting the provider's rate limit; on a 429, back off and retry once.
     `count` (a one-item list) is increased for every request actually sent."""
@@ -316,6 +332,7 @@ def call_with_retry(provider: str, models: list[str], prompt: str, count: list[i
     limiter = rate_limiters.get(provider)
     if limiter:
         limiter.wait()
+    spend_request()
     count[0] += 1
     try:
         return PROVIDERS[provider](models, prompt, **options)
@@ -325,6 +342,7 @@ def call_with_retry(provider: str, models: list[str], prompt: str, count: list[i
     time.sleep(BACKOFF_SECONDS)
     if limiter:
         limiter.wait()
+    spend_request()
     count[0] += 1
     return PROVIDERS[provider](models, prompt, **options)  # a second 429 also moves down the chain
 

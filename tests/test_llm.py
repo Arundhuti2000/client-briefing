@@ -292,3 +292,16 @@ def test_llm_check_reports_which_providers_work(providers, monkeypatch, capsys):
     llm_check.main()
     out = capsys.readouterr().out
     assert "Briefings will be written by: openrouter" in out and "test-openrouter-key" not in out
+
+
+def test_the_request_budget_is_a_hard_cap(monkeypatch):
+    """LLM_REQUEST_BUDGET refuses the next real request once it is used up; the chain then moves
+    on to the template, as for a missing key."""
+    sent = []
+    monkeypatch.setitem(llm.PROVIDERS, "fake", lambda models, prompt, **options: sent.append(prompt) or llm.Reply("{}", "fake-1"))
+    monkeypatch.setattr(llm, "REQUESTS_SENT", [0])
+    monkeypatch.setenv("LLM_REQUEST_BUDGET", "1")
+    llm.call_with_retry("fake", ["fake-1"], "first")
+    with pytest.raises(llm.BudgetSpent):
+        llm.call_with_retry("fake", ["fake-1"], "second")
+    assert sent == ["first"] and llm.REQUESTS_SENT == [1]

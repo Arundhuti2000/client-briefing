@@ -63,6 +63,7 @@ GOLDEN = {"dev": GOLDEN_PATH, "dev2": EVAL_DIR / "dev2" / "golden.yaml", "holdou
 RETRIEVAL_SETS = {"dev": EVAL_DIR / "retrieval_set.yaml", "dev2": EVAL_DIR / "dev2" / "retrieval_set.yaml",
                   "holdout": EVAL_DIR / "holdout" / "retrieval_set.yaml"}
 HOLDOUT_GOLDEN = GOLDEN["holdout"]
+REAL_HISTORY = EVAL_DIR / "history" / "eval_real.json"  # the last make eval-real, kept across template runs
 ROUTER_SET = Path(__file__).with_name("router_set.yaml")
 
 
@@ -463,6 +464,7 @@ def main() -> None:
     zero_tolerance_failed = False
     cards, holdout_cards = [], []
     quality_report = {"retrieval": {}, "detectors": {}, "faithfulness": {}, "note": quality.NOTE}
+    replay = os.environ.pop("CACHE_REPLAY", None)  # only real-model runs may replay cached AI answers
     for dataset, golden_path in GOLDEN.items():
         golden_set = golden if dataset == "dev" else yaml.safe_load(golden_path.read_text(encoding="utf-8"))
         dataset_providers = providers if dataset == "dev" else ["mock"]
@@ -474,6 +476,11 @@ def main() -> None:
             injected = injected_sentences(data_dir)
             for provider in dataset_providers:
                 os.environ["LLM_CHAIN"] = provider  # read by app/llm.py on every call ("mock", or the real chain)
+                # The template scorecard must be template only: never replay an AI answer into it
+                if provider != "mock" and replay:
+                    os.environ["CACHE_REPLAY"] = replay
+                else:
+                    os.environ.pop("CACHE_REPLAY", None)
                 run = run_golden(golden_set, traps, injected)
                 card = scorecard(run, provider, len(golden_set["cases"]), traps) | {"dataset": dataset}
                 (holdout_cards if dataset == "holdout" else cards).append(card)
@@ -495,6 +502,14 @@ def main() -> None:
         report = {"ran_at": ran_at, "runs": cards, "holdout_runs": holdout_cards, "quality": quality_report}
         REPORT_PATH.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(f"\nSaved the scorecard to {REPORT_PATH.name} (shown on the Evaluations page).")
+        real_cards = [c for c in cards if c["provider"] != "mock"]
+        if real_cards:  # kept, so later template runs don't lose the real-model numbers (make results reads it)
+            REAL_HISTORY.write_text(json.dumps({
+                "ran_at": ran_at, "cards": real_cards,
+                "faithfulness": [quality_report["faithfulness"][f"{c['dataset']} ({c['provider']})"] for c in real_cards],
+            }, indent=2) + "\n", encoding="utf-8")
+            print(f"Saved the real-model run to eval/history/{REAL_HISTORY.name}.")
+    print(f"Real LLM requests sent by this run: {llm.REQUESTS_SENT[0]}")
     if zero_tolerance_failed:
         print("\nFAILED: restricted leakage or injection above zero (zero tolerance).")
         sys.exit(1)
