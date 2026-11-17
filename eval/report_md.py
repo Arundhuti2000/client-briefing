@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 REPORT = ROOT / "eval" / "last_run.json"
 HISTORY = ROOT / "eval" / "history"
 README = ROOT / "README.md"
+PRESENTATION = ROOT / "PRESENTATION.md"
 START, END = "<!-- RESULTS:START -->", "<!-- RESULTS:END -->"
 NAMES = {"dev": "Dev", "dev2": "Dev 2", "holdout": "Holdout"}
 METRICS = [("precision@5", "P@5"), ("recall@5", "R@5"), ("mrr", "MRR"), ("ndcg@5", "nDCG@5")]
@@ -135,6 +136,66 @@ def results_markdown() -> str:
     return "\n".join(parts)
 
 
+def zero_tolerance_totals(cards: list[dict]) -> tuple[int, int]:
+    """(failures, checks) over every zero-tolerance check of every run: "0 (in 12 checks)" -> (0, 12)."""
+    failures = checks = 0
+    for card in cards:
+        for c in card["checks"]:
+            if c["zero_tolerance"]:
+                bad, _, total = c["result"].partition(" (in ")
+                failures, checks = failures + int(bad), checks + int(total.split()[0])
+    return failures, checks
+
+
+def presentation_numbers() -> str:
+    """The Key numbers block of PRESENTATION.md: the few figures the talk quotes, from the same files."""
+    report = load(REPORT)
+    q, cards = report["quality"], report["runs"] + report.get("holdout_runs", [])
+    lines = [f"Written by `make results` from the eval run of {report['ran_at'][:16].replace('T', ' ')} UTC and "
+             f"`eval/history/`. Do not edit by hand.", ""]
+    for card in cards:
+        failed = [f"{c['name']} {c['result']}" for c in card["checks"] if not c["passed"]]
+        passed = sum(c["passed"] for c in card["checks"])
+        lines.append(f"- **{run_name(card)}, {card['cases']} briefings:** {passed} of {len(card['checks'])} checks pass"
+                     + (f"; failing: {', '.join(failed)}." if failed else "."))
+    failures, checks = zero_tolerance_totals(cards)
+    lines.append(f"- **Zero-tolerance checks** (restricted leaks, injected instructions, red team) across those runs: "
+                 f"{failures} failures in {checks} checks.")
+    broken = load(HISTORY / "eval_break.json")
+    if broken:
+        leaks = [f"{NAMES[c['dataset']]} {c2['result']}" for c in broken["runs"] for c2 in c["checks"]
+                 if c2["name"] == "Restricted leakage"]
+        lines.append(f"- **Break test** (`make eval-break`, access filter switched off, "
+                     f"{broken['ran_at'][:10]}): Restricted leakage fails as it must: {', '.join(leaks)}.")
+    real = load(HISTORY / "eval_real.json")
+    if real:
+        card, f = real["cards"][0], real["faithfulness"][0]
+        lines.append(f"- **With a real model writing** ({card['models']}): {f['supported']} of {f['claims']} AI claims "
+                     f"supported by their sources ({f['faithfulness']:.0%}); {f['first_drafts_rejected']} of "
+                     f"{f['llm_sections']} first drafts rejected by the checker; about {card['cost']['requests']:g} "
+                     f"AI requests per briefing.")
+    round2 = load(HISTORY / "holdout_round2_first_run.json")
+    if round2:
+        facts = next(c for c in round2["holdout_runs"][0]["checks"] if c["name"] == "Required facts")
+        lines.append(f"- **Held-out round 2, first run:** required facts {facts['result']}; both misses were our own "
+                     f"answer-key error, corrected without changing any rule.")
+    round1 = load(HISTORY / "holdout_round1.json")
+    if round1:
+        failed = [c["name"].lower() for c in round1["holdout_runs"][0]["checks"] if not c["passed"]]
+        lines.append(f"- **Held-out round 1** found gaps in {len(failed)} checks ({', '.join(failed)}); fixed, and that "
+                     f"set became practice data.")
+    hybrid = {d: q["retrieval"][d]["methods"]["hybrid"]["recall@5"] for d in ("dev", "holdout") if d in q["retrieval"]}
+    leaked = sum(q["retrieval"][d]["restricted_retrieved"] for d in q["retrieval"])
+    lines.append(f"- **Search** puts, on average, "
+                 + " and ".join(f"{v:.0%} ({NAMES[d].lower()})" for d, v in hybrid.items())
+                 + f" of the labelled relevant documents in the top 5 (hand-made labels, under review in "
+                   f"eval/LABEL_REVIEW.md); restricted documents returned to a user without access: {leaked}.")
+    r = q["router"]
+    lines.append(f"- **Follow-up routing:** {r['accuracy']:.0%} of {r['questions']} labelled questions go to the right "
+                 f"place without the AI tie-breaker.")
+    return "\n".join(lines)
+
+
 def write_between(path: Path, start: str, end: str, body: str) -> None:
     text = path.read_text(encoding="utf-8")
     before, rest = text.split(start, 1)
@@ -145,6 +206,9 @@ def write_between(path: Path, start: str, end: str, body: str) -> None:
 def main() -> None:
     write_between(README, START, END, results_markdown())
     print(f"Wrote the results section of {README.name} from {REPORT.name} and {HISTORY.name}/.")
+    if PRESENTATION.exists():
+        write_between(PRESENTATION, "<!-- NUMBERS:START -->", "<!-- NUMBERS:END -->", presentation_numbers())
+        print(f"Wrote the Key numbers of {PRESENTATION.name}.")
 
 
 if __name__ == "__main__":

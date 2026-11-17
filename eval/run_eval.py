@@ -64,6 +64,7 @@ RETRIEVAL_SETS = {"dev": EVAL_DIR / "retrieval_set.yaml", "dev2": EVAL_DIR / "de
                   "holdout": EVAL_DIR / "holdout" / "retrieval_set.yaml"}
 HOLDOUT_GOLDEN = GOLDEN["holdout"]
 REAL_HISTORY = EVAL_DIR / "history" / "eval_real.json"  # the last make eval-real, kept across template runs
+BREAK_HISTORY = EVAL_DIR / "history" / "eval_break.json"  # the last make eval-break (must FAIL leakage)
 ROUTER_SET = Path(__file__).with_name("router_set.yaml")
 
 
@@ -495,7 +496,10 @@ def main() -> None:
 
     ran_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
     if os.getenv("EVAL_BREAK_ENTITLEMENTS") == "1":
-        print("\neval-break: not saved, so the Evaluations page keeps the last real run.")
+        # Kept apart from last_run.json, so the Evaluations page keeps the last real run; make results reads it
+        BREAK_HISTORY.write_text(json.dumps({"ran_at": ran_at, "runs": cards + holdout_cards}, indent=2) + "\n",
+                                 encoding="utf-8")
+        print(f"\neval-break: saved to eval/history/{BREAK_HISTORY.name} only (the Evaluations page keeps the last real run).")
     else:
         for f in quality_report["faithfulness"].values():
             f.pop("unsupported")  # claim text can come from restricted briefings: terminal only
