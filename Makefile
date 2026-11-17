@@ -2,7 +2,7 @@
 # or point at it directly:  make test PYTHON=.venv/Scripts/python
 PYTHON ?= python
 
-.PHONY: data dev2 holdout load unify briefing api web test eval eval-real eval-break results llm-check mcp
+.PHONY: data dev2 holdout load unify briefing api web test eval eval-real eval-break results llm-check demo-check mcp
 
 # Which briefing `make briefing` prints: CLIENT is an ID, name or alias; USER_ID is u1 or u2.
 # (Not "AS" or "USER": make predefines AS as the assembler, and USER is a shell variable.)
@@ -69,6 +69,11 @@ results:
 # Ping each LLM provider (one tiny request each) and print which work
 llm-check:
 	$(PYTHON) -m app.llm_check
+
+# Replay the demo's AI paths from the cache (0 requests) and print PASS/FAIL per path.
+# Fill the cache once with: python -m app.demo_check --generate
+demo-check:
+	$(PYTHON) -m app.demo_check
 
 # The read-only tools as an MCP server (stdio), e.g. for Claude Desktop
 mcp:

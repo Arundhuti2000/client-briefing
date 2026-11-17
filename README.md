@@ -39,6 +39,11 @@ open http://localhost:5173, then:
 
 Deep link as a backup: `http://localhost:5173/?user=u2&client=NWC&step=read`.
 
+Before a live demo, run `make demo-check`: it replays these paths (the briefings for Northwind as
+Sam and Helios as Alex and Sam, and three follow-up questions) from the cache with zero requests
+and prints PASS or FAIL per path. `python -m app.demo_check --generate` fills the cache once with a
+real model.
+
 ## Architecture
 
 ```mermaid
