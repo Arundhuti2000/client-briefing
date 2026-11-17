@@ -304,7 +304,7 @@ For the full design see [SPEC.md](SPEC.md); for commands see [README.md](README.
 - Both endpoints are entitlement-checked (a flag or source the user can't see is "not found", like one that doesn't exist) and audited.
 
 **D52. Decisions don't rewrite the briefing.**
-- The briefing text always follows the records as the validator checked it; the banker's choice shows in "Watch out for" and becomes a follow-up.
+- The briefing text follows the newer source as unification decided (the record, or a newer non-restricted document for who holds a role, D19), exactly as the validator checked it; the banker's choice shows in "Watch out for" and becomes a follow-up.
 - The remaining step progress (for example "Read opened") is kept in the browser's `localStorage`: a demo convenience, not a record.
 
 **D53. Follow-up tasks are the user's only free-form write**, recorded with who, which client and which evidence they came from, and audited.

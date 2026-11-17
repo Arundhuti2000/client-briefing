@@ -2,7 +2,155 @@
 
 Builds a pre-meeting client briefing from messy CRM data, metrics, notes and news.
 Code decides what's true; the LLM only explains it, and code checks the explanation.
-See [SPEC.md](SPEC.md) for the full design.
+See [SPEC.md](SPEC.md) for the full design and [DECISIONS.md](DECISIONS.md) for every decision
+and trade-off (numbered D1–D78), including the dated held-out results.
+
+## What it does
+
+A banker picks a client and gets a briefing for the next meeting: who the client is, the numbers
+that matter and how they changed, what the client asked for and what we promised, which deals to
+raise, recent news, and what is uncertain or conflicting in the data. Every sentence cites its
+source, every number comes from SQL, and anything the data disagrees about goes to the banker to
+decide instead of being silently picked. The banker checks conflicts, reads, asks follow-up
+questions, and approves the briefing before it is shared, with follow-up tasks created from it.
+
+## Demo in 2 minutes
+
+Start the app (`make api` and `make web`, see [Run the briefing workspace](#run-the-briefing-workspace)),
+open http://localhost:5173, then:
+
+1. **Be Sam.** In the sidebar, open **Switch user** and pick **Sam Rivera** (Analyst, standard access).
+2. **Find Northwind by an alias.** On **Meetings**, type `NWC` in **Search a client or alias**:
+   Northwind Capital Partners appears, matched by the unify rules (an old duplicate record was merged
+   into it behind the scenes). Click **Review**.
+3. **Gather.** See the sources the briefing read and what was cleaned up. Click **Continue to check**.
+4. **Resolve a conflict.** Check shows "Who is the CFO?" and "Is the FX hedging deal still live?",
+   each as a choice between its two sources; **Suggested** marks the side the briefing uses. Pick
+   one option for each.
+5. **Click a citation.** In **Read**, click the small numbered chip after any sentence: the source
+   record or document opens on the right.
+6. **Ask a follow-up.** In **Ask a follow-up**, type `Is the FX hedging deal still live?`. The
+   answer shows its route, how it was chosen, the tools called and who wrote it (code, from SQL).
+7. **Share.** **Approve and export** stays blocked ("Decide conflicts first") until both conflicts
+   are decided; then it records the approval, creates the ticked follow-up tasks and exports Markdown.
+8. **Same client, two users.** Switch to **Alex Morgan** and open **Helios Energy Group**: the
+   restricted M&A Advisory deal (Project Sunrise) and its confidential meeting note are there. Switch
+   back to **Sam** and open Helios again: they are gone, with no count or hint that they exist.
+
+Deep link as a backup: `http://localhost:5173/?user=u2&client=NWC&step=read`.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  subgraph build["Built once: make data, make unify (no LLM)"]
+    raw["Raw CSV exports and documents<br/>(.eml, .md, .txt)"] --> stg["Staging tables<br/>(values kept as exported)"]
+    stg --> unify["Unify rules<br/>aliases, duplicates, stale and<br/>conflicting facts, approved sources"]
+    unify --> sql[("SQLite<br/>typed tables + flags")]
+    unify --> idx[("Hybrid index<br/>BM25 + MiniLM vectors")]
+  end
+  subgraph run["Per briefing or question"]
+    tools["Read-only tools<br/>entitlements in the query, audited"]
+    plan["Fixed plan<br/>seven sections"]
+    router["Router<br/>rule, then meaning, then LLM"]
+    bundle["Evidence bundle<br/>facts with evidence IDs"]
+    chain["LLM chain<br/>Gemini, OpenRouter, Ollama, template"]
+    check["Validator<br/>citations, numbers, restricted text,<br/>injection, internal IDs"]
+  end
+  sql --> tools
+  idx --> tools
+  tools --> plan --> bundle
+  tools --> router --> bundle
+  bundle --> chain --> check
+  check --> ui["React UI"]
+  check --> api["FastAPI"]
+  tools --> mcp["MCP server"]
+```
+
+Code-written parts (metrics, the "what changed" strip, the uncertain/conflicting panel, answers
+about numbers and records) go from the evidence bundle straight to the validator, without the LLM.
+
+## Where the LLM is and isn't used
+
+| Step | LLM? | How |
+| --- | --- | --- |
+| Loading and cleaning the exports | No | Date and money formats configured per source system; an unknown status is an error |
+| Alias resolution, duplicates | No | Rules and fuzzy matching with fixed thresholds (≥ 90 resolves, 75–89 review, below stays unresolved) |
+| Stale and conflicting facts | No | Rules on dates and values over structured claims |
+| Access control | No | Entitlement filter inside the SQL and search query, before anything else sees the data |
+| Metrics and every number | No | From SQL, formatted by code |
+| Ranking deals to raise | No | Expected value (estimate × stage probability), then recency |
+| "What changed since the last meeting" | No | Code diffs metrics, actions, deals and documents |
+| Uncertain, conflicting or unavailable | No | Flag text written by the rules, shown verbatim |
+| Writing the narrative sections | **Yes** | One request per briefing for all sections, cached on disk |
+| Checking every draft | No | The validator (citations, numbers, restricted text, injection, IDs) |
+| Routing a follow-up question | Mostly no | 1. keyword rules; 2. meaning match against example questions with the local embedding model (no API); 3. only if both are unsure, one LLM request that must name a route from the list; otherwise document search |
+| Answering about numbers and records | No | The route's SQL tools; code writes one sentence per fact |
+| Answering about documents and news | **Yes** | A bounded tool-calling loop (at most 3 steps), then the same validator |
+| No key or no network | No | Template mode: bullets copied from the evidence |
+
+## How messy data is handled
+
+| Trap | What the data does | What the system does |
+| --- | --- | --- |
+| Aliases | Notes say "NWC" or "Northwind Cap." | Resolved to one client by rules |
+| Duplicate client | An older record on the same domain (or the same name) | Merged into the newest; its contacts, actions and documents follow |
+| Duplicate contact | The same person twice (email case, nickname, same name and title) | One contact kept, the newer |
+| Stale statement | A prior briefing quotes last year's revenue | The latest SQL figure is used; the old one is flagged with both values |
+| Conflicting statement | An email names a different CFO than the CRM | Flagged with both sources and dates; the newer one is used; the banker confirms |
+| Conflict across sources | A note says "committed" to a deal the pipeline marks Lost | Flagged; the deal is never shown as live |
+| Missing ID | A news item has no client tag | Resolved from the client's name in the text |
+| Ambiguous reference | News about "Arbor" (a different company) | Not attached to any client; listed as unmatched |
+| Restricted records | A confidential deal and meeting note | Invisible to users without access, including in counts |
+| Prompt injection | "Ignore previous instructions…" in an email | Treated as data; never repeated as a claim |
+| Unapproved news source | A blog post | Not indexed; logged as a flag |
+| Overdue action | An open action past its due date | Flagged as overdue |
+
+## Controls
+
+- **Entitlements in the query:** every restricted row and document carries a required entitlement,
+  and the filter is in the SQL `WHERE` clause and the search candidates, so the LLM never sees what
+  the user can't.
+- **No leakage by count:** restricted rows are never counted or summarized; Sam sees no "1 hidden
+  deal" note. A restricted source and a missing one return the same 404.
+- **Read-only tools:** SQLite is opened read-only; the only writes are the audit log and the
+  user's own actions (tasks, conflict decisions, approvals).
+- **Injection handling:** documents are wrapped as data; instruction-like sentences are detected
+  and never repeated; the validator rejects claims without evidence.
+- **Validator rules:** every bullet cites evidence that exists; every number and date is in its
+  cited evidence; no restricted text; no injected text; no internal IDs in prose. A failed draft is
+  retried once, then falls back to the evidence itself.
+- **Audit log:** every tool call (user, tool, arguments, result IDs, errors) is logged; no audit
+  row, no data.
+- **Approval before sharing:** sharing is blocked until every conflict is decided; the approver,
+  recipients (from the coverage team) and time are recorded.
+
+## Design decisions and trade-offs
+
+- **A fixed plan, not an agent, for the briefing:** a briefing always needs the same seven answers,
+  so a fixed plan is cheaper, faster and testable. The one small tool-calling loop is in follow-up
+  questions, where questions are open-ended (D29, D48).
+- **SQLite and NumPy vectors:** zero setup and real SQL for a prototype with a few dozen
+  documents. In production: the firm's warehouse, a semantic layer for metric definitions, and
+  pgvector or a managed hybrid search service with the same filter-first rule (D22, D23).
+- **One LLM request per briefing, plus caching:** all sections in one JSON answer, cached by
+  evidence; regenerating a briefing costs nothing. The free tier allowed about 20 requests a day,
+  and the same cost discipline matters in production (D31, D34).
+- **A pluggable LLM chain:** `LLM_CHAIN` tries Gemini, OpenRouter, a local Ollama model, then the
+  template, so the briefing always renders; switching models needs no code change (D33).
+- **MCP for reuse:** the same read-only tools, with the same entitlement filter and audit, are
+  served over MCP, so another approved assistant can use them without a second access path (D64).
+
+## Known limitations
+
+- **Synthetic data:** three small datasets written for the prototype; real wording and mess are
+  wider. The held-out sets were written by the same person who wrote the rules, so they aren't blind.
+- **Pre-extracted claims:** the conflict rules check structured claims stored as JSON; in
+  production an LLM would extract them into the same schema, and extraction quality is untested.
+- **Local embedding model:** all-MiniLM-L6-v2 instead of the firm's approved model.
+- **No real integrations:** no CRM, mailbox or calendar connection; one meeting date per client.
+- **Free-tier models for the demo:** Gemini Flash Lite and free OpenRouter models, which can be
+  rate-limited or slow; production needs an approved model inside the firm's environment.
 
 ## Setup
 
@@ -29,7 +177,7 @@ Run from the repo root with the venv activated.
 | `make api`   | Start the FastAPI backend on http://localhost:8000     |
 | `make web`   | Start the React frontend on http://localhost:5173      |
 | `make test`  | Run unit tests                                         |
-| `make eval`  | Scorecard on dev and held-out data, then the quality metrics report (template, no AI) |
+| `make eval`  | Scorecard on dev, dev2 and held-out data, then the quality metrics report (template, no AI) |
 | `make eval-real` | The same, then again with the LLM chain in `.env` (adds faithfulness) |
 | `make eval-break` | The eval with the entitlement filter off: Restricted leakage must FAIL |
 | `make llm-check` | Ping each LLM provider and show which ones work    |
@@ -77,7 +225,7 @@ Instructions or off-topic questions are refused. API: `POST /briefings/{client_i
    realistic emails, notes and news, plus controls that must not be flagged. See
    [DECISIONS.md](DECISIONS.md) for every decision and the held-out history. Restricted leakage, injection and the red team are zero-tolerance: one
    failure exits non-zero. Cost per briefing (LLM requests, tokens, cache hits) is reported.
-2. **Quality metrics report** (`eval/quality.py`), dev | holdout:
+2. **Quality metrics report** (`eval/quality.py`), dev | dev2 | holdout:
    - Retrieval: Precision@5, Recall@5, MRR and nDCG@5 for BM25, vector and hybrid, with the
      entitlement filter on, from hand-labelled questions (`eval/retrieval_set.yaml`,
      `eval/holdout/retrieval_set.yaml`). The labels should be reviewed.
