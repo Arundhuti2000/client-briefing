@@ -9,6 +9,14 @@ export type UserInfo = { user_id: string; name: string; role: string; entitlemen
 
 export type ClientInfo = { client_id: string; legal_name: string; segment: string }
 
+export type FlagSummary = {
+  title: string
+  detail: string
+  flag_type: string
+  severity: 'low' | 'medium' | 'high'
+  housekeeping: boolean // data clean-up, not something to raise at the meeting
+}
+
 // One row of the meetings list (GET /clients): no LLM call, entitlement-filtered like the briefing
 export type ClientSummary = {
   client_id: string
@@ -20,7 +28,14 @@ export type ClientSummary = {
   meeting_date: string
   conflicts: string[] // titles of conflict flags: the banker decides these in Check
   heads_up: string[] // other flags that need attention (housekeeping left out)
+  flags: FlagSummary[] // every flag this user may see, attention first (the Data health page)
 }
+
+// The last `make eval` scorecard (GET /evaluations): counts and statuses, never failure text
+export type EvalCheck = { name: string; measures: string; result: string; target: string; passed: boolean; zero_tolerance: boolean }
+export type EvalTrap = { trap_id: string; what: string; checks: string[]; status: 'PASS' | 'FAIL' | 'not checked' }
+export type EvalRun = { provider: string; cases: number; models: string; checks: EvalCheck[]; latency: string; traps: EvalTrap[] }
+export type EvalReport = { ran_at: string; runs: EvalRun[] }
 
 export type ResolveResponse = {
   query: string
@@ -214,5 +229,7 @@ export const getSource = (userId: string, evidenceId: string) =>
 
 export const createTask = (userId: string, task: NewTask) =>
   request<Task>('/tasks', userId, { method: 'POST', body: JSON.stringify(task) })
+
+export const getEvaluations = (userId: string) => request<EvalReport>('/evaluations', userId)
 
 export const getAudit = (userId: string, limit = 50) => request<AuditRow[]>(`/audit?limit=${limit}`, userId)

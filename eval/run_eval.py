@@ -37,6 +37,7 @@ from app.wording import format_usd, metric_label, signed_change, value_text
 from data import generate_data as gd
 
 GOLDEN_PATH = Path(__file__).with_name("golden.yaml")
+REPORT_PATH = Path(__file__).with_name("last_run.json")  # the last scorecard, for GET /evaluations
 
 # (check, what it measures, target)
 CHECKS = [
@@ -289,31 +290,42 @@ def passes(name: str, target: str, score: Score) -> bool:
     return not score.failures
 
 
-def print_scorecard(title: str, run: Run, cases: int) -> None:
-    print(f"\n{title}: {cases} briefings, LLM: "
-          + ", ".join(f"{model} x{n}" for model, n in sorted(run.models.items())))
-    print(f"  {'Check':<22}{'What it measures':<46}{'Result':<20}{'Target':<8}Status")
+def scorecard(run: Run, provider: str, cases: int, traps: dict) -> dict:
+    """The scorecard as data: what the terminal shows and what the Evaluations page reads.
+    Counts and statuses only: failure messages can name restricted records, so they stay in the terminal."""
+    checks = []
     for name, measures, target in CHECKS:
         s = run.scores[name]
         result = (f"{len(s.failures)} (in {s.total} checks)" if name in ZERO_TOLERANCE
                   else f"{s.passed}/{s.total} ({100 * s.passed // max(s.total, 1)}%)")
-        print(f"  {name:<22}{measures:<46}{result:<20}{target:<8}{'PASS' if passes(name, target, s) else 'FAIL'}")
+        checks.append({"name": name, "measures": measures, "result": result, "target": target,
+                       "passed": passes(name, target, s), "zero_tolerance": name in ZERO_TOLERANCE})
+    trap_rows = []
+    for trap_id, trap in traps.items():
+        covered_by = [name for name, s in run.scores.items() if trap_id in s.traps]
+        ok = all(run.scores[name].traps[trap_id] for name in covered_by)
+        trap_rows.append({"trap_id": trap_id, "what": trap["description"].split(":")[0], "checks": covered_by,
+                          "status": ("PASS" if ok else "FAIL") if covered_by else "not checked"})
     ms = run.latencies_ms
-    latency = f"median {statistics.median(ms) / 1000:.1f} s, max {max(ms) / 1000:.1f} s"
-    print(f"  {'Latency':<22}{'time to build one briefing':<46}{latency:<28}-")
+    return {"provider": provider, "cases": cases,
+            "models": ", ".join(f"{model} x{n}" for model, n in sorted(run.models.items())),
+            "checks": checks,
+            "latency": f"median {statistics.median(ms) / 1000:.1f} s, max {max(ms) / 1000:.1f} s",
+            "traps": trap_rows}
+
+
+def print_scorecard(card: dict, run: Run) -> None:
+    print(f"\nScorecard ({card['provider']}): {card['cases']} briefings, LLM: {card['models']}")
+    print(f"  {'Check':<22}{'What it measures':<46}{'Result':<20}{'Target':<8}Status")
+    for c in card["checks"]:
+        print(f"  {c['name']:<22}{c['measures']:<46}{c['result']:<20}{c['target']:<8}{'PASS' if c['passed'] else 'FAIL'}")
+    print(f"  {'Latency':<22}{'time to build one briefing':<46}{card['latency']:<28}-")
     for name, _, _ in CHECKS:
         for failure in run.scores[name].failures:
             print(f"  FAIL {name}: {failure}")
-
-
-def print_trap_coverage(run: Run, traps: dict) -> None:
     print("\nPlanted traps and the checks that cover them:")
-    for trap_id, trap in traps.items():
-        checks = [name for name, s in run.scores.items() if trap_id in s.traps]
-        ok = all(run.scores[name].traps[trap_id] for name in checks)
-        status = ("PASS" if ok else "FAIL") if checks else "not checked"
-        what = trap["description"].split(":")[0]
-        print(f"  {trap_id:<4}{what:<26}{', '.join(checks):<44}{status}")
+    for t in card["traps"]:
+        print(f"  {t['trap_id']:<4}{t['what']:<26}{', '.join(t['checks']):<44}{t['status']}")
 
 
 def main() -> None:
@@ -331,6 +343,7 @@ def main() -> None:
             providers.append(configured)
 
     zero_tolerance_failed = False
+    cards = []
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         data_dir = Path(tmp)
         print(f"Building a fresh copy of the data in {data_dir} ...")
@@ -340,10 +353,13 @@ def main() -> None:
         for provider in providers:
             os.environ["LLM_PROVIDER"] = provider  # read by app/llm.py on every call
             run = run_golden(golden, traps, injected)
-            print_scorecard(f"Scorecard ({provider})", run, len(golden["cases"]))
-            print_trap_coverage(run, traps)
+            cards.append(scorecard(run, provider, len(golden["cases"]), traps))
+            print_scorecard(cards[-1], run)
             zero_tolerance_failed |= any(run.scores[name].failures for name in ZERO_TOLERANCE)
 
+    ran_at = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+    REPORT_PATH.write_text(json.dumps({"ran_at": ran_at, "runs": cards}, indent=2) + "\n", encoding="utf-8")
+    print(f"\nSaved the scorecard to {REPORT_PATH.name} (shown on the Evaluations page).")
     if zero_tolerance_failed:
         print("\nFAILED: restricted leakage or injection above zero (zero tolerance).")
         sys.exit(1)

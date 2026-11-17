@@ -5,3 +5,4 @@ __pycache__/
 .cache/
 *.npy
 data/embeddings_index.json
+eval/last_run.json

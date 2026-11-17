@@ -9,19 +9,27 @@ import type { Progress } from './progress'
 import { AuditDrawer } from './components/AuditDrawer'
 import { BriefingPage } from './components/BriefingPage'
 import type { Step } from './components/BriefingPage'
+import { ClientsPage } from './components/ClientsPage'
+import { DataHealthPage } from './components/DataHealthPage'
+import { EvaluationsPage } from './components/EvaluationsPage'
 import { MeetingsPage } from './components/MeetingsPage'
 import { Sidebar } from './components/Sidebar'
+import type { Page } from './components/Sidebar'
 
 const STEPS: Step[] = ['gather', 'check', 'read', 'share']
-const linkParams = new URLSearchParams(window.location.search) // optional deep link: ?user=u2&client=NWC&step=read
+const linkParams = new URLSearchParams(window.location.search) // deep links: ?user=u2&client=NWC&step=read, ?page=clients
 const INITIAL_USER = linkParams.get('user') ?? 'u2'
+const BACK_LABELS: Record<Page, string> = { meetings: 'All meetings', clients: 'All clients', health: 'Data health', evals: 'Evaluations' }
+const PAGES: Page[] = ['meetings', 'clients', 'health', 'evals']
+const INITIAL_PAGE = PAGES.find((p) => p === linkParams.get('page')) ?? 'meetings'
 let deepLinkHandled = false // React's dev mode runs effects twice; generate only once (one LLM call)
 
 function App() {
   const [users, setUsers] = useState<UserInfo[]>([])
   const [userId, setUserId] = useState(INITIAL_USER)
   const [clients, setClients] = useState<ClientSummary[] | null>(null)
-  const [clientId, setClientId] = useState<string | null>(null) // null: the meetings page
+  const [page, setPage] = useState<Page>(INITIAL_PAGE)
+  const [clientId, setClientId] = useState<string | null>(null) // set: that client's briefing, on top of `page`
   const [step, setStep] = useState<Step>('gather')
   const [briefings, setBriefings] = useState<Record<string, Briefing>>({}) // "user:client" -> briefing
   const [loadingKey, setLoadingKey] = useState<string | null>(null)
@@ -115,21 +123,29 @@ function App() {
         userId={userId}
         onUserChange={changeUser}
         meetingCount={clients ? clients.length : null}
-        onMeetings={() => setClientId(null)}
+        page={clientId ? 'meetings' : page}
+        onNavigate={(p) => {
+          setPage(p)
+          setClientId(null)
+        }}
         onAudit={() => setAuditOpen((o) => !o)}
-        onMeetingsPage={clientId === null}
       />
       <main className="main">
         {clientId === null ? (
           <>
             {error && <p className="note note-error" style={{ maxWidth: 1180, margin: '0 auto 16px' }}>{error}</p>}
-            <MeetingsPage
-              clients={clients}
-              firstName={me ? me.name.split(' ')[0] : ''}
-              userId={userId}
-              progressOf={progressOf}
-              onOpen={open}
-            />
+            {page === 'meetings' && (
+              <MeetingsPage
+                clients={clients}
+                firstName={me ? me.name.split(' ')[0] : ''}
+                userId={userId}
+                progressOf={progressOf}
+                onOpen={open}
+              />
+            )}
+            {page === 'clients' && <ClientsPage clients={clients} onOpen={open} />}
+            {page === 'health' && <DataHealthPage clients={clients} onOpen={open} />}
+            {page === 'evals' && <EvaluationsPage key={userId} userId={userId} />}
           </>
         ) : (
           <BriefingPage
@@ -143,6 +159,7 @@ function App() {
             progress={progressOf(clientId)}
             onStep={(s) => goTo(clientId, s)}
             onProgress={(change) => updateProgress(clientId, change)}
+            backLabel={BACK_LABELS[page]}
             onBack={() => setClientId(null)}
             onRetry={() => generate(userId, clientId)}
           />

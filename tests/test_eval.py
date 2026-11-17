@@ -99,3 +99,14 @@ def test_a_trap_is_missed_when_its_flag_is_gone(sam, unified):
     score = Score()
     run_eval.check_traps(b, {"must_flag": ["T12"]}, golden, traps, score, "C001/u2")
     assert score.failures == ["C001/u2: T12 was not flagged"] and score.traps == {"T12": False}
+
+
+def test_the_saved_scorecard_holds_counts_and_statuses_but_no_failure_text(unified):
+    golden = yaml.safe_load(run_eval.GOLDEN_PATH.read_text(encoding="utf-8"))
+    traps = {t["trap_id"]: t for t in json.loads((unified / "planted_traps.json").read_text(encoding="utf-8"))}
+    run = run_eval.run_golden(golden, traps, run_eval.injected_sentences(unified))
+    run.scores["Restricted leakage"].check(False, "C002/u2: restricted OPP-HEL-MA reached u2", "T9")  # a planted failure
+    card = run_eval.scorecard(run, "mock", len(golden["cases"]), traps)
+    assert [c["name"] for c in card["checks"]] == [name for name, _, _ in run_eval.CHECKS]
+    assert next(c for c in card["checks"] if c["name"] == "Restricted leakage")["passed"] is False
+    assert len(card["traps"]) == 12 and "OPP-HEL-MA" not in json.dumps(card)  # no record IDs leave the terminal

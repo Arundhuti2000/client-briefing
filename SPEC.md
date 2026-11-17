@@ -408,11 +408,12 @@ FastAPI endpoints are thin wrappers over `app/`. All logic stays in Python, so t
 | Endpoint | Returns |
 | --- | --- |
 | `GET /users` | Demo users and their entitlements |
-| `GET /clients` | The meetings list: each client with its meeting date, aliases, and the titles of the flags that need attention (conflicts apart). Built from the same audited, entitlement-filtered tools, with no LLM call |
+| `GET /clients` | The meetings list: each client with its meeting date, aliases, the titles of the flags that need attention (conflicts apart), and every flag the user may see (for the Data health page). Built from the same audited, entitlement-filtered tools, with no LLM call |
 | `GET /clients/resolve?q=` | The resolved client, or candidates if ambiguous |
 | `POST /briefings` body `{client_id, meeting_date}` | The full briefing JSON: sections, metrics, opportunities, actions, flags, validator results |
 | `GET /sources/{evidence_id}` | The source record or document text (entitlement-checked) |
 | `POST /tasks` | Creates a follow-up task |
+| `GET /evaluations` | The last `make eval` scorecard (`eval/last_run.json`): counts and statuses only, never failure text, which could name restricted records. 404 until `make eval` has run |
 | `GET /audit?limit=` | Recent audit-log rows |
 
 Define the response shapes once as Pydantic models, and mirror them as TypeScript types in `web/src/api.ts`. Enable CORS for `http://localhost:5173` only.
@@ -430,7 +431,10 @@ React (`web/src/`) follows the “Client Meeting Briefing” design canvas (Brie
 
 Controls are shadcn/ui components on Tailwind CSS v4: Button, Badge, Select (the user switcher), Tabs (the meeting filters), Checkbox (follow-ups), RadioGroup (Check's options) and Tooltip (citation chips). Like every shadcn project, they are copied into `web/src/components/ui/` and owned by us; their variable names (`--primary`, `--background`, `--accent`…) are mapped onto our palette in `theme.css`. Because shadcn uses `--accent` for grey hovers, our indigo is named `--indigo`, and `dark:` styles apply only inside a `.dark` element. Icons are lucide-react. Every source has one icon, from `web/src/sources.ts` (mail for email, a notebook for meeting notes, a newspaper for news, people for CRM contacts, a chart for SQL figures, a target for pipeline, a list for actions, a life buoy for the service desk, a warning sign for flags). The icon appears on each citation chip (with a tooltip naming the source), in the source panel, in Gather's “Sources read” and on Check's options.
 
-- **Sidebar:** brand, Meetings (with the count), Audit log, and who is signed in, with their access level and a demo user switcher (Sam or Alex), so entitlement filtering can be shown live.
+- **Sidebar:** brand; Meetings (with the count), Clients, Data health and Evaluations, as in the canvas; Audit log; and who is signed in, with their access level and a demo user switcher (Sam or Alex), so entitlement filtering can be shown live.
+- **Clients** (`GET /clients`): a card per client with segment, region, coverage lead, next meeting, the other names the data uses for it (“Also known as”, linked by the unify rules), what needs attention, and Open briefing.
+- **Data health** (`GET /clients`): totals (flags, conflicts, to watch, fixed or left out), then every flag per client with a plain tag: Conflict, Out of date, Overdue, Merged, Superseded, Left out, Unmatched.
+- **Evaluations** (`GET /evaluations`): the last `make eval` scorecard and which checks cover each planted trap. `make eval` saves it to `eval/last_run.json` (gitignored).
 - **Meetings page** (`GET /clients`): a greeting, an “Up next for you” card for the first briefing that needs decisions, and a table of meetings with tabs (All, Needs you, Ready, Approved). It shows when each meeting is, a four-segment progress bar, “Heads up” (conflict titles, or the other flags that need attention), and Review or Open. The search box filters by name or alias; Enter asks `/clients/resolve`, so typos and ambiguous names (“Arbor”) show the resolver's answer. Below that, “How every briefing works”.
 - **Briefing workspace** (`POST /briefings`): a header (client, segment, region, last interaction, prepared for, coverage, and a countdown to the meeting), then four steps:
   1. **Gather:** “Sources read” (the briefing's evidence grouped by system, with counts and dates); “Cleaned up for you” (aliases linked and the data-housekeeping flags); and “How the briefing is made”, with the rules, SQL and search steps and the AI step, the real model or “Template (no AI)”, and the validator's pass and retry counts.

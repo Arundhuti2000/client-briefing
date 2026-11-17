@@ -27,6 +27,7 @@ type Props = {
   progress: Progress
   onStep: (step: Step) => void
   onProgress: (change: Partial<Progress>) => void
+  backLabel: string // where the back link goes: "All meetings", "All clients"…
   onBack: () => void
   onRetry: () => void
 }
@@ -122,7 +123,7 @@ export function BriefingPage(props: Props) {
       <div className="ws-head">
         <button type="button" className="link-back" onClick={props.onBack}>
           <ChevronLeft size={14} aria-hidden="true" />
-          All meetings
+          {props.backLabel}
         </button>
         <div className="ws-title">
           <span className="initials initials-lg" aria-hidden="true">

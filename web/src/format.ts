@@ -48,6 +48,13 @@ export function todayLine(now = new Date()): string {
   return `${WEEKDAYS[now.getDay()]}, ${now.getDate()} ${MONTHS[now.getMonth()]}`
 }
 
+// A timestamp in the browser's time zone: "17 Nov 2026 at 07:58"
+export function dateTime(iso: string): string {
+  const d = new Date(iso)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} at ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 export function greeting(now = new Date()): string {
   const hour = now.getHours()
   return hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening'

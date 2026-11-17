@@ -128,3 +128,19 @@ def test_clients_lists_meetings_with_what_needs_checking_and_no_llm(monkeypatch)
     assert northwind["conflicts"] == ["Who is the CFO?", "Is the FX hedging deal still live?"]
     assert northwind["heads_up"] == ["Revenue figure is out of date", "Overdue action"]  # housekeeping left out
     assert rows["C002"]["conflicts"] == [] and api.get("/clients").status_code == 401
+
+
+def test_clients_include_every_flag_the_user_may_see_attention_first():
+    northwind = next(r for r in api.get("/clients", headers=SAM).json() if r["client_id"] == "C001")
+    order = [f["housekeeping"] for f in northwind["flags"]]
+    assert order == sorted(order) and order.count(False) == 4 and order.count(True) == 4  # act on, then housekeeping
+    assert northwind["flags"][0]["title"] in ("Who is the CFO?", "Is the FX hedging deal still live?")
+
+
+def test_evaluations_serves_only_the_saved_counts(tmp_path, monkeypatch):
+    from eval import run_eval
+    monkeypatch.setattr(run_eval, "REPORT_PATH", tmp_path / "last_run.json")
+    assert api.get("/evaluations", headers=SAM).status_code == 404  # no scorecard yet
+    run_eval.REPORT_PATH.write_text('{"ran_at": "2026-11-16T20:00:00+00:00", "runs": []}', encoding="utf-8")
+    assert api.get("/evaluations", headers=SAM).json()["runs"] == []
+    assert api.get("/evaluations").status_code == 401

@@ -8,6 +8,7 @@ Run:  make api   (http://localhost:8000, interactive docs at /docs)
 """
 
 import datetime as dt
+import json
 from contextlib import asynccontextmanager, closing
 from typing import Annotated, Any
 
@@ -20,6 +21,7 @@ from app.orchestrator import Briefing, BriefingError
 from app.tasks import Task, TaskError, TaskRequest, create_task
 from app.tools import ClientId, Fact, UserContext
 from app.wording import AS_OF_DATE
+from eval import run_eval
 
 
 @asynccontextmanager
@@ -67,6 +69,14 @@ class BriefingResponse(Briefing):
     markdown: str                   # the same briefing as Markdown, for the download button
 
 
+class FlagSummary(BaseModel):
+    title: str
+    detail: str
+    flag_type: str
+    severity: str
+    housekeeping: bool              # data clean-up, not something to raise at the meeting
+
+
 class ClientSummary(BaseModel):
     """One row of the meetings list: who, when, and what needs the banker before the meeting."""
     client_id: str
@@ -78,6 +88,7 @@ class ClientSummary(BaseModel):
     meeting_date: dt.date
     conflicts: list[str]            # titles of conflict flags: the banker decides these
     heads_up: list[str]             # titles of the other flags that need attention (not housekeeping)
+    flags: list[FlagSummary]        # every flag this user may see, for the Data health page
 
 
 class AuditRow(BaseModel):
@@ -122,6 +133,11 @@ def list_users():
                      entitlements=tools.load_user(r["user_id"]).entitlements) for r in rows]
 
 
+def flag_order(f: Fact) -> tuple:
+    """What needs attention first (by severity), data housekeeping last; as in the briefing."""
+    return f.label in orchestrator.HOUSEKEEPING, orchestrator.SEVERITY_ORDER[f.details["severity"]], f.evidence_id
+
+
 def client_summary(user: UserContext, client_id: str) -> ClientSummary | None:
     """Built from the same audited, entitlement-filtered tools as the briefing, without the LLM."""
     profile = tools.get_client_profile(user, client_id=client_id)
@@ -135,7 +151,11 @@ def client_summary(user: UserContext, client_id: str) -> ClientSummary | None:
                          region=client.details["region"], primary_banker=primary[0] if primary else None,
                          aliases=orchestrator.client_aliases(client_id), meeting_date=AS_OF_DATE,
                          conflicts=[f.details["title"] for f in attention if f.label == "conflict"],
-                         heads_up=[f.details["title"] for f in attention if f.label != "conflict"])
+                         heads_up=[f.details["title"] for f in attention if f.label != "conflict"],
+                         flags=[FlagSummary(title=f.details["title"], detail=str(f.value), flag_type=f.label,
+                                            severity=f.details["severity"],
+                                            housekeeping=f.label in orchestrator.HOUSEKEEPING)
+                                for f in sorted(flags.facts, key=flag_order)])
 
 
 @app.get("/clients", response_model=list[ClientSummary])
@@ -185,6 +205,15 @@ def new_task(body: TaskRequest, user: CurrentUser):
         return create_task(user, body)
     except TaskError:
         raise HTTPException(status_code=404, detail="Client not found.")
+
+
+@app.get("/evaluations")
+def evaluations(user: CurrentUser) -> dict:
+    """The last `make eval` scorecard: counts and statuses only (never failure text, which
+    could name restricted records). Written by eval/run_eval.py."""
+    if not run_eval.REPORT_PATH.exists():
+        raise HTTPException(status_code=404, detail="No scorecard yet. Run make eval.")
+    return json.loads(run_eval.REPORT_PATH.read_text(encoding="utf-8"))
 
 
 @app.get("/audit", response_model=list[AuditRow])

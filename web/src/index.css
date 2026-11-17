@@ -138,6 +138,7 @@
 .row-end { display: flex; justify-content: flex-end; }
 .empty { padding: 40px 20px; text-align: center; font-size: 14px; color: var(--text-3); }
 
+.client-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; align-items: start; }
 .how { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
 .how li { display: flex; flex-direction: column; gap: 8px; padding: 18px; border-radius: var(--radius-lg); background: var(--surface); border: 1px solid var(--line); }
 .how-top { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; }
