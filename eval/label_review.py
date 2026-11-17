@@ -2,7 +2,7 @@
 documents and the top 5 hybrid results (the ranking the app uses), each with its title, so a
 person can judge whether a label is missing or wrong. It never changes the labels.
 
-Writes the review to stdout as Markdown; a reviewer adds notes by hand.
+Writes the review to stdout as Markdown; eval/LABEL_REVIEW.md is that output plus a reviewer's notes.
 Run:  python -m eval.label_review > review.md
 """
 
