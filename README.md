@@ -228,7 +228,8 @@ Instructions or off-topic questions are refused. API: `POST /briefings/{client_i
 2. **Quality metrics report** (`eval/quality.py`), dev | dev2 | holdout:
    - Retrieval: Precision@5, Recall@5, MRR and nDCG@5 for BM25, vector and hybrid, with the
      entitlement filter on, from hand-labelled questions (`eval/retrieval_set.yaml`,
-     `eval/holdout/retrieval_set.yaml`). The labels should be reviewed.
+     `eval/holdout/retrieval_set.yaml`). The labels should be reviewed: a pre-review with a note on
+     every questionable label is in [eval/LABEL_REVIEW.md](eval/LABEL_REVIEW.md) (`python -m eval.label_review`).
    - Detectors on 200+ generated perturbations (aliases, typos, suffixes, case, look-alikes,
      true conflicts and near-misses): precision, recall, F1, and every false positive and negative.
    - Router: accuracy and a confusion table on 36 labelled questions (`eval/router_set.yaml`).
