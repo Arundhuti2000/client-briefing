@@ -185,7 +185,7 @@ Run from the repo root with the venv activated.
 | `make eval`  | Scorecard on dev, dev2 and held-out data, then the quality metrics report (template, no AI) |
 | `make eval-real` | The same, then again with the LLM chain in `.env` (adds faithfulness) |
 | `make eval-break` | The eval with the entitlement filter off: Restricted leakage must FAIL |
-| `make results` | Write the README's results and PRESENTATION.md's key numbers from the saved eval runs |
+| `make results` | Write the README's results section from the saved eval runs |
 | `make demo-check` | Replay the demo's AI paths from the cache (0 requests); PASS/FAIL per path |
 | `make llm-check` | Ping each LLM provider and show which ones work    |
 | `make mcp`   | Start the read-only tools as an MCP server (stdio)     |
@@ -235,8 +235,9 @@ Instructions or off-topic questions are refused. API: `POST /briefings/{client_i
 2. **Quality metrics report** (`eval/quality.py`), dev | dev2 | holdout:
    - Retrieval: Precision@5, Recall@5, MRR and nDCG@5 for BM25, vector and hybrid, with the
      entitlement filter on, from hand-labelled questions (`eval/retrieval_set.yaml`,
-     `eval/holdout/retrieval_set.yaml`). The labels should be reviewed: a pre-review with a note on
-     every questionable label is in [eval/LABEL_REVIEW.md](eval/LABEL_REVIEW.md) (`python -m eval.label_review`).
+     `eval/holdout/retrieval_set.yaml`). The labels are hand-made and should be reviewed:
+     `python -m eval.label_review` lists, for every question, the labelled documents and the top 5
+     hybrid results side by side.
    - Detectors on 200+ generated perturbations (aliases, typos, suffixes, case, look-alikes,
      true conflicts and near-misses): precision, recall, F1, and every false positive and negative.
    - Router: accuracy and a confusion table on 36 labelled questions (`eval/router_set.yaml`).

@@ -148,7 +148,8 @@ def zero_tolerance_totals(cards: list[dict]) -> tuple[int, int]:
 
 
 def presentation_numbers() -> str:
-    """The Key numbers block of PRESENTATION.md: the few figures the talk quotes, from the same files."""
+    """The Key numbers block of a PRESENTATION.md (talk notes, if present in the repo root): the few
+    figures the talk quotes, from the same files."""
     report = load(REPORT)
     q, cards = report["quality"], report["runs"] + report.get("holdout_runs", [])
     lines = [f"Written by `make results` from the eval run of {report['ran_at'][:16].replace('T', ' ')} UTC and "
@@ -188,8 +189,8 @@ def presentation_numbers() -> str:
     leaked = sum(q["retrieval"][d]["restricted_retrieved"] for d in q["retrieval"])
     lines.append(f"- **Search** puts, on average, "
                  + " and ".join(f"{v:.0%} ({NAMES[d].lower()})" for d, v in hybrid.items())
-                 + f" of the labelled relevant documents in the top 5 (hand-made labels, under review in "
-                   f"eval/LABEL_REVIEW.md); restricted documents returned to a user without access: {leaked}.")
+                 + f" of the labelled relevant documents in the top 5 (hand-made labels, under review); "
+                   f"restricted documents returned to a user without access: {leaked}.")
     r = q["router"]
     lines.append(f"- **Follow-up routing:** {r['accuracy']:.0%} of {r['questions']} labelled questions go to the right "
                  f"place without the AI tie-breaker.")
